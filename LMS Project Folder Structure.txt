@@ -1,0 +1,69 @@
+Ohk lets create a exam taking app, that is completely text based. its a basically mock exam system where the student will go to exam page>mock exam. 
+
+exam page they will select their level and then their subject. then the system will create a mock exam for them, each mock will be named subject-Mock#
+
+
+
+each will will be created from a pool of 500 question, each mock will have 50 questions and 2 hours time. 
+
+
+
+when they enter the mock exam, i want to add a security feature, where if they close or change tab the exam will be automaticly ended and the result will be shown. and add more features to stumilate real acca computerbased exam. 
+
+
+
+lets 1st create the exam page design, then work on the main mock
+
+
+
+
+
+-- SQL Script for creating tables in `lms_db` for the ACCA Mock Exam System
+-- We will create three tables: `users`, `questions`, and `exam_sessions`.
+
+-- ========= Table: users =========
+-- Stores basic information about the students.
+CREATE TABLE IF NOT EXISTS `users` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `username` VARCHAR(100) NOT NULL UNIQUE,
+  `email` VARCHAR(100) NOT NULL UNIQUE,
+  `password_hash` VARCHAR(255) NOT NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+
+-- ========= Table: questions =========
+-- This table will store the entire pool of questions for all subjects.
+CREATE TABLE IF NOT EXISTS `questions` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `subject` VARCHAR(100) NOT NULL,
+  `question_text` TEXT NOT NULL,
+  `option_a` VARCHAR(255) NOT NULL,
+  `option_b` VARCHAR(255) NOT NULL,
+  `option_c` VARCHAR(255) NOT NULL,
+  `option_d` VARCHAR(255) NOT NULL,
+  `correct_answer` CHAR(1) NOT NULL COMMENT 'Stores "a", "b", "c", or "d"',
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX `idx_subject` (`subject`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+
+-- ========= Table: exam_sessions =========
+-- This collection will store the data for every mock exam a student attempts.
+-- A new row is created here each time a student starts an exam.
+CREATE TABLE IF NOT EXISTS `exam_sessions` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `user_id` INT NOT NULL,
+  `subject` VARCHAR(100) NOT NULL,
+  `mock_number` INT NOT NULL,
+  `start_time` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `end_time` TIMESTAMP NULL,
+  `completed` BOOLEAN DEFAULT FALSE,
+  `score` INT NULL,
+  `reason_for_completion` VARCHAR(50),
+  `questions_list` TEXT NOT NULL COMMENT 'Comma-separated list of question IDs for this session',
+  `answers_list` TEXT COMMENT 'Comma-separated list of user answers ("a", "b", "c", "d", or "null")',
+  `flags_list` TEXT COMMENT 'Comma-separated list of flagged question IDs',
+  FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
