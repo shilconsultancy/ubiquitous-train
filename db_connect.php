@@ -7,9 +7,9 @@
 // --- DATABASE CREDENTIALS ---
 // IMPORTANT: Replace with your actual database credentials
 $servername = "localhost";    // Usually "localhost"
-$username = "root";           // Default for XAMPP is "root"
-$password = "";               // Default for XAMPP is empty
-$dbname = "lms_db"; // The database name you created
+$username = "u338187101_lms";           // Default for XAMPP is "root"
+$password = "*sX*rb4fk8O";               // Default for XAMPP is empty
+$dbname = "u338187101_lms"; // The database name you created
 
 // --- ESTABLISH THE CONNECTION ---
 // Create a new mysqli object to connect to the database

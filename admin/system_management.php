@@ -455,7 +455,7 @@ $conn->close();
                                 <?php while($payment = $payments_result->fetch_assoc()): ?>
                                     <tr class="border-b hover:bg-gray-50">
                                         <td data-label="Invoice ID" class="p-4 font-mono text-xs text-gray-500">
-                                            <a href="view_invoice.php?id=<?= $payment['id']; ?>" class="hover:text-primary"><?= htmlspecialchars($payment['invoice_id'] ?? 'N/A') ?></a>
+                                           <?= htmlspecialchars($payment['invoice_id'] ?? 'N/A') ?>
                                         </td>
                                         <td data-label="Student Name" class="p-4 font-semibold text-gray-800"><?= htmlspecialchars($payment['username']) ?></td>
                                         <td data-label="Fee Type" class="p-4 text-gray-600"><?= htmlspecialchars(ucfirst($payment['fee_type'])) ?></td>

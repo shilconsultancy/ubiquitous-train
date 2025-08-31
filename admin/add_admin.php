@@ -2,14 +2,14 @@
 session_start();
 require_once 'db_config.php';
 
-// --- Admin Authentication Check ---
-if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true || !in_array($_SESSION['role'], ['admin', 'super_admin'])) {
-    header('Location: ../index.php');
+// --- SUPER ADMIN AUTHENTICATION CHECK ---
+// This now correctly restricts access to super_admin only.
+if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true || $_SESSION['role'] !== 'super_admin') {
+    header('Location: dashboard.php?error=unauthorized'); // Redirect to dashboard or a specific error page
     exit;
 }
 
 // --- Define active page for sidebar ---
-// Set to a non-existent value so no menu item is highlighted
 $active_page = 'add_admin';
 
 // Initialize variables for form feedback

@@ -11,7 +11,6 @@ ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
 
 // Include the database configuration file
-// FIX: Corrected path to db_config.php (assuming it's in the same directory)
 require_once 'db_config.php';
 
 // --- Subject-Specific Configuration ---
@@ -19,33 +18,24 @@ $subject_code = 'FA1';
 $questions_table_name = 'questions_fa1';
 // ------------------------------------
 
-// --- CRITICAL FIX: Robust Login and Role Check ---
-// Redirect to login if user is not logged in, or if user_id/role is missing from session.
-// This ensures that only properly authenticated users can proceed.
+// --- CRITICAL: Robust Login and Role Check ---
 if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true || !isset($_SESSION['user_id']) || $_SESSION['user_id'] === 0 || !isset($_SESSION['role'])) {
     header('Location: ../index.php');
-    exit; // Stop script execution
+    exit;
 }
 
-// Now we can safely assume user_id and role are set
 $user_id = $_SESSION['user_id'];
 $user_role = $_SESSION['role'];
 
 // --- Check for Database Connection Errors ---
-// The $conn object should be created in db_config.php.
 if (!isset($conn) || $conn->connect_error) {
-    // Stop the script and display a clear error message.
     die("Database Connection Failed: " . (isset($conn) ? $conn->connect_error : "The database connection object was not created. Check db_config.php."));
 }
 
-// --- REVISED: STRICT REFRESH-HANDLING LOGIC (APPLIES TO ALL USERS TAKING EXAM) ---
-// This code runs every time the page loads.
-// If an active exam session for this subject is recorded in the session,
-// we verify its status in the database before deciding to terminate.
+// --- REVISED AND CORRECTED: STRICT REFRESH-HANDLING LOGIC ---
 if (isset($_SESSION['active_exam_id'][$subject_code])) {
     $session_id_from_session = $_SESSION['active_exam_id'][$subject_code];
 
-    // Check the database for the status of this session ID
     $check_sql = "SELECT completed FROM exam_sessions WHERE id = ?";
     $stmt_check = $conn->prepare($check_sql);
     $stmt_check->bind_param("i", $session_id_from_session);
@@ -54,33 +44,26 @@ if (isset($_SESSION['active_exam_id'][$subject_code])) {
     $db_session_status = $result_check->fetch_assoc();
     $stmt_check->close();
 
-    // If the session exists in DB and is NOT completed, then it's a legitimate refresh. Terminate.
-    if ($db_session_status && $db_session_status['completed'] == FALSE) {
-        // Immediately terminate the exam in the database.
+    if ($db_session_status && $db_session_status['completed'] == 0) {
         $sql_terminate = "UPDATE exam_sessions SET end_time = CURRENT_TIMESTAMP, completed = TRUE, score = 0, reason_for_completion = 'Terminated due to page refresh.' WHERE id = ?";
         $stmt_terminate = $conn->prepare($sql_terminate);
         $stmt_terminate->bind_param("i", $session_id_from_session);
         $stmt_terminate->execute();
         $stmt_terminate->close();
 
-        // Clear the session variable for this exam.
         unset($_SESSION['active_exam_id'][$subject_code]);
-        $conn->close(); // Close connection before redirecting
+        $conn->close();
 
-        // Display a termination message and redirect to the dashboard.
-        echo '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Exam Terminated</title><script src="https://cdn.tailwindcss.com"></script><meta http-equiv="refresh" content="5;url=dashboard.php"></head><body class="bg-slate-100 flex items-center justify-center h-screen"><div class="text-center p-8 bg-white shadow-lg rounded-lg"><h1 class="text-2xl font-bold text-red-600">Exam Terminated</h1><p class="mt-2 text-slate-700">You have refreshed the page. As per the exam rules, your session has been ended.</p><p class="mt-4 text-sm text-slate-500">You will be redirected to the dashboard in 5 seconds...</p></div></body></html>';
-        exit; // Stop the script from executing further.
+        echo '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Exam Terminated</title><script src="https://cdn.tailwindcss.com"></script><meta http-equiv="refresh" content="5;url=dashboard.php"></head><body class="bg-slate-100 flex items-center justify-center h-screen"><div class="text-center p-8 bg-white shadow-lg rounded-lg max-w-lg mx-auto"><h1 class="text-2xl font-bold text-red-600">Exam Terminated</h1><p class="mt-2 text-slate-700">You refreshed the page during an active exam. As per exam rules, your session has been ended and your score has been recorded as 0.</p><p class="mt-4 text-sm text-slate-500">You will be redirected to your dashboard in 5 seconds...</p></div></body></html>';
+        exit;
     } else {
-        // If session ID is not in DB, or is already completed, it's a stale session variable.
-        // Clear it and allow a new exam to be created.
         unset($_SESSION['active_exam_id'][$subject_code]);
     }
 }
-// --- END: REVISED REFRESH-HANDLING LOGIC ---
+// --- END: REFRESH-HANDLING LOGIC ---
 
 
-// --- CREATE NEW EXAM SESSION (This code now only runs on the first visit or after stale session cleared) ---
-// Get 50 random question IDs.
+// --- CREATE NEW EXAM SESSION ---
 $question_ids = [];
 $sql_questions = "SELECT id FROM `$questions_table_name` ORDER BY RAND() LIMIT 50";
 $result = $conn->query($sql_questions);
@@ -92,7 +75,6 @@ if ($result && $result->num_rows >= 50) {
 }
 $questions_list_str = implode(',', $question_ids);
 
-// Get the next mock number.
 $mock_number = 1;
 $sql_mock_count = "SELECT COUNT(*) as mock_count FROM exam_sessions WHERE user_id = ? AND subject = ?";
 $stmt_count = $conn->prepare($sql_mock_count);
@@ -102,7 +84,6 @@ $row = $stmt_count->get_result()->fetch_assoc();
 $mock_number = $row['mock_count'] + 1;
 $stmt_count->close();
 
-// Insert the new session record.
 $sql_insert = "INSERT INTO exam_sessions (user_id, subject, mock_number, questions_list) VALUES (?, ?, ?, ?)";
 $stmt_insert = $conn->prepare($sql_insert);
 $stmt_insert->bind_param("isis", $user_id, $subject_code, $mock_number, $questions_list_str);
@@ -110,9 +91,7 @@ $stmt_insert->execute();
 $new_session_id = $stmt_insert->insert_id;
 $stmt_insert->close();
 
-// Store the new session ID in the PHP session to detect refreshes for ALL users taking the exam.
 $_SESSION['active_exam_id'][$subject_code] = $new_session_id;
-
 
 // --- Load all necessary data for the page ---
 $sql_get_questions = "SELECT id, question_text, option_a, option_b, option_c, option_d FROM `$questions_table_name` WHERE id IN ($questions_list_str) ORDER BY FIELD(id, $questions_list_str)";
@@ -132,7 +111,7 @@ $exam_page_data = [
     'questions' => $exam_questions
 ];
 
-$conn->close(); // Close the database connection at the end of PHP logic
+$conn->close();
 ?>
 <!-- HTML and JavaScript Section -->
 <!DOCTYPE html>
@@ -196,12 +175,28 @@ $conn->close(); // Close the database connection at the end of PHP logic
     
     <!-- Modals -->
     <div id="end-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden"><div class="bg-white p-8 rounded-lg shadow-xl text-center max-w-sm"><h2 class="text-xl font-bold mb-4">Are you sure?</h2><p class="text-slate-600 mb-6">Your answers will be submitted.</p><div class="flex justify-center gap-4"><button id="cancel-end-btn" class="px-6 py-2 border rounded-lg hover:bg-slate-100">Cancel</button><button id="confirm-end-btn" class="px-6 py-2 bg-[rgb(197,26,29)] text-white font-semibold rounded-lg">End Exam</button></div></div></div>
-    <div id="result-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 hidden"><div class="bg-white p-10 rounded-lg shadow-xl text-center max-w-md"><div id="result-icon"></div><h2 id="result-title" class="text-2xl font-bold mb-4"></h2><p id="result-text" class="text-slate-600 mb-6"></p><p id="redirect-message" class="text-sm text-slate-500"></p></div></div>
+    <div id="result-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 hidden"><div class="bg-white p-10 rounded-lg shadow-xl text-center max-w-md"><div id="result-icon"></div><h2 id="result-title" class="text-2xl font-bold mb-4"></h2><div id="result-text" class="text-slate-600 mb-6"></div><p id="redirect-message" class="text-sm text-slate-500"></p></div></div>
 
     <script>
     document.addEventListener('DOMContentLoaded', () => {
         const examData = <?php echo json_encode($exam_page_data); ?>;
         
+        // --- Message Banks ---
+        const passMessages = [
+            "Excellent work! You've passed. Keep up the momentum!",
+            "Congratulations on passing! Your hard work is paying off.",
+            "Great job! You have successfully passed this exam.",
+            "You did it! A fantastic result. On to the next challenge!",
+            "Well done! This is a significant step forward in your journey."
+        ];
+        const failMessages = [
+            "Don't be discouraged. Every attempt is a learning opportunity.",
+            "This was a tough one. Review your answers and you'll get it next time.",
+            "Progress isn't always linear. Keep your head up and prepare for the next attempt.",
+            "You're closer than you think. Analyze your results and focus on weaker areas.",
+            "Every expert was once a beginner. Use this as motivation to come back stronger."
+        ];
+
         let questions = examData.questions.map(q => ({ ...q, userAnswer: null, isFlagged: false }));
         let currentQuestionIndex = 0;
         let examEnded = false;
@@ -268,16 +263,24 @@ $conn->close(); // Close the database connection at the end of PHP logic
             const answersToSubmit = questions.reduce((acc, q) => { if (q.userAnswer) acc[q.id] = q.userAnswer; return acc; }, {});
             try {
                 const data = JSON.stringify({ session_id: examData.sessionId, answers: answersToSubmit, reason: reason });
-                // Use sendBeacon for security violations (tab change, window close) for all users
                 if ((reason.includes('closed') || reason.includes('tab')) && navigator.sendBeacon) {
-                    // We don't wait for a response here, the page will be terminated by the browser.
                     navigator.sendBeacon('end_exam.php', data);
                 } else {
-                    // For normal endings (manual or timer), we use fetch and wait for the score.
                     const response = await fetch('end_exam.php', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: data });
                     const result = await response.json();
                     if(result.success) {
-                        showResultModal('Exam Finished!', `Your score: <strong class="text-2xl">${result.score}/${result.total}</strong>`, 'success');
+                        const isPass = (result.score / result.total) >= 0.5; // Assuming 50% is pass mark
+                        const title = isPass ? 'Congratulations!' : 'Keep Pushing Forward!';
+                        const message = isPass 
+                            ? passMessages[Math.floor(Math.random() * passMessages.length)]
+                            : failMessages[Math.floor(Math.random() * failMessages.length)];
+                        
+                        const resultHTML = `
+                            <p>Your score is: <strong class="text-2xl">${result.score}/${result.total}</strong></p>
+                            <p class="mt-4 text-slate-600 italic">"${message}"</p>
+                        `;
+
+                        showResultModal(title, resultHTML, isPass ? 'success' : 'fail');
                     } else {
                          showResultModal('Error', `Submission failed: ${result.message}`, 'error');
                     }
@@ -287,16 +290,23 @@ $conn->close(); // Close the database connection at the end of PHP logic
             }
         }
         
-        function showResultModal(title, text, type) {
-            // Hide the main exam UI before showing the modal
+        function showResultModal(title, textHTML, type) {
             document.getElementById('exam-ui').style.display = 'none';
             
             dom.resultTitle.textContent = title;
-            dom.resultText.innerHTML = text;
-            dom.resultIcon.innerHTML = type === 'success' ? `<svg class="w-16 h-16 mx-auto text-green-500" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>` : `<svg class="w-16 h-16 mx-auto text-red-500" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" /></svg>`;
+            dom.resultText.innerHTML = textHTML;
+
+            let iconHTML = '';
+            if (type === 'success') {
+                iconHTML = `<svg class="w-16 h-16 mx-auto text-green-500" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>`;
+            } else if (type === 'fail') {
+                iconHTML = `<svg class="w-16 h-16 mx-auto text-yellow-500" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 18v-5.25m0 5.25a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h6m-9 0H3.375a1.125 1.125 0 01-1.125-1.125V14.25m17.25 4.5a1.125 1.125 0 001.125-1.125V14.25m-17.25 4.5L12 14.25m0 0l6.75 6.75M12 14.25l-6.75 6.75" /></svg>`;
+            } else { // error
+                iconHTML = `<svg class="w-16 h-16 mx-auto text-red-500" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" /></svg>`;
+            }
+            dom.resultIcon.innerHTML = iconHTML;
             dom.resultModal.classList.remove('hidden');
             
-            // Auto-redirect after 5 seconds
             let countdown = 5;
             dom.redirectMessage.textContent = `Redirecting to dashboard in ${countdown}...`;
             const redirectInterval = setInterval(() => {
@@ -319,17 +329,15 @@ $conn->close(); // Close the database connection at the end of PHP logic
         dom.cancelEndBtn.addEventListener('click', () => dom.endModal.classList.add('hidden'));
         dom.confirmEndBtn.addEventListener('click', () => { dom.endModal.classList.add('hidden'); endExam('User ended exam manually.'); });
         
-        // --- Security Listeners (Apply to all users taking exam) ---
+        // --- Security Listeners ---
         document.addEventListener('visibilitychange', () => {
              if (document.hidden && !examEnded) {
-                // When tab changes, immediately show the termination message and send data.
-                showResultModal('Exam Terminated', `You have violated the exam rules by leaving the exam window. Your progress has been submitted.`, 'error');
-                endExam('Switched to another tab.');
+                 showResultModal('Exam Terminated', `You have violated the exam rules by leaving the exam window. Your progress has been submitted.`, 'error');
+                 endExam('Switched to another tab.');
             }
         });
         window.addEventListener('beforeunload', () => {
             if (!examEnded) {
-                // This will attempt to send data as the window closes.
                 endExam('Window or tab was closed.');
             }
         });

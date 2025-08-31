@@ -1,89 +1,81 @@
 <?php
 session_start();
-
-// Enable error reporting for debugging.
 ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
-
 require_once 'db_config.php';
 
-// --- Database Connection Validation ---
-if (!isset($conn) || !$conn instanceof mysqli || $conn->connect_error) {
-    die("Error: Database connection could not be established.");
-}
-
-// --- Admin Authentication Check ---
+// --- Authentication & Connection Validation ---
+if (!isset($conn) || !$conn instanceof mysqli || $conn->connect_error) { die("DB connection error."); }
 if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true || !in_array($_SESSION['role'], ['admin', 'super_admin'])) {
     header('Location: ../index.php');
     exit;
 }
 
-// --- Define active page for sidebar ---
 $active_page = 'invoicing';
-
 $invoice = null;
-$fee_items = []; // To store individual fee items for this invoice
+$fee_items = []; // To store the line items for the invoice
+$payment_history = [];
 $error_message = '';
 
-// Crucially, fetch by invoice_number, not invoice primary ID
-// The URL should pass the invoice_number (e.g., view_invoice.php?invoice_num=INV-2025...)
-$invoice_number_param = isset($_GET['invoice_num']) ? trim($_GET['invoice_num']) : '';
+// --- Message Display Logic ---
+$message_html = '';
+if (isset($_GET['message']) && isset($_GET['message_type'])) {
+    $message_content = htmlspecialchars($_GET['message']);
+    $message_type = htmlspecialchars($_GET['message_type']);
+    $message_class = match ($message_type) {
+        'success' => 'bg-green-100 border-l-4 border-green-500 text-green-700',
+        'error' => 'bg-red-100 border-l-4 border-red-500 text-red-700',
+        default => 'bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700',
+    };
+    $message_html = "<div class='{$message_class} p-4 mb-6 rounded-md fade-in' role='alert'><p class='font-bold'>" . ucfirst($message_type) . "!</p><p>{$message_content}</p></div>";
+}
 
-if (!empty($invoice_number_param)) {
-    // 1. Fetch main invoice details along with student details using invoice_number
+// --- Data Fetching by Invoice ID ---
+$invoice_id = isset($_GET['invoice_id']) ? (int)$_GET['invoice_id'] : 0;
+
+if ($invoice_id > 0) {
+    // 1. Fetch main invoice details
     $stmt = $conn->prepare("
-        SELECT 
+        SELECT
             inv.id, inv.student_id, u.username AS student_username, u.email AS student_email,
-            u.acca_id AS student_acca_id, inv.invoice_number, inv.issue_date, 
-            inv.due_date, inv.total_amount, inv.fee_type, inv.subject AS invoice_subject_summary, inv.status,
-            inv.paid_date, inv.created_at, inv.updated_at
+            u.acca_id AS student_acca_id, inv.invoice_number, inv.issue_date,
+            inv.due_date, inv.total_amount, inv.amount_paid, inv.balance_due, inv.status
         FROM invoices inv
         JOIN users u ON inv.student_id = u.id
-        WHERE inv.invoice_number = ?
+        WHERE inv.id = ?
     ");
-    $stmt->bind_param("s", $invoice_number_param);
+    $stmt->bind_param("i", $invoice_id);
     $stmt->execute();
     $result = $stmt->get_result();
-
     if ($result->num_rows === 1) {
         $invoice = $result->fetch_assoc();
 
-        // 2. Fetch all individual fee items associated with this invoice_number
-        $stmt_fees = $conn->prepare("
-            SELECT 
-                fee.fee_type, fee.subject, fee.amount, fee.original_amount, fee.discount_applied
-            FROM fees fee
-            WHERE fee.invoice_id = ?
-        ");
-        $stmt_fees->bind_param("s", $invoice_number_param);
-        $stmt_fees->execute();
-        $fees_result = $stmt_fees->get_result();
-        while ($row = $fees_result->fetch_assoc()) {
+        // 2. Fetch all individual fee items for this invoice
+        $stmt_items = $conn->prepare("SELECT fee_type, subject, amount FROM fees WHERE invoice_id = ?");
+        $stmt_items->bind_param("s", $invoice['invoice_number']);
+        $stmt_items->execute();
+        $items_result = $stmt_items->get_result();
+        while ($row = $items_result->fetch_assoc()) {
             $fee_items[] = $row;
         }
-        $stmt_fees->close();
+        $stmt_items->close();
 
+        // 3. Fetch all payment history for this invoice
+        $stmt_payments = $conn->prepare("SELECT amount, payment_date, payment_method, notes, processed_by FROM payments WHERE invoice_id = ? ORDER BY payment_date DESC, created_at DESC");
+        $stmt_payments->bind_param("i", $invoice_id);
+        $stmt_payments->execute();
+        $payments_result = $stmt_payments->get_result();
+        while ($row = $payments_result->fetch_assoc()) {
+            $payment_history[] = $row;
+        }
+        $stmt_payments->close();
     } else {
-        $error_message = "Invoice not found or multiple invoices with the same number (should not happen for unique invoice_number).";
+        $error_message = "Invoice not found.";
     }
     $stmt->close();
 } else {
-    $error_message = "No invoice number provided.";
+    $error_message = "No invoice ID provided.";
 }
-
-// Calculate subtotal and total discount from fee_items for display coherence
-// Note: invoice.total_amount already reflects final amount after discount.
-// We need original subtotal for breakdown.
-$calculated_subtotal = 0;
-foreach ($fee_items as $item) {
-    $calculated_subtotal += $item['original_amount']; // Sum original amounts of individual fees
-}
-// The total discount is stored in the main invoice record's total_amount.
-// This means total_amount = calculated_subtotal - invoice.discount_applied (if you add a discount_applied to invoices table)
-// For now, if invoice.total_amount is the final price, then:
-$total_discount_for_display = $calculated_subtotal - ($invoice['total_amount'] ?? 0);
-if ($total_discount_for_display < 0) $total_discount_for_display = 0; // Avoid negative if amounts are off
 
 $conn->close();
 ?>
@@ -100,7 +92,8 @@ $conn->close();
             theme: {
                 extend: {
                     colors: {
-                        primary: '#4F46E5', secondary: '#0EA5E9', dark: '#1E293B', light: '#F8FAFC'
+                        primary: '#4F46E5', secondary: '#0EA5E9', dark: '#1E293B', light: '#F8FAFC',
+                        success: '#10B981', danger: '#EF4444', warning: '#F59E0B'
                     }
                 }
             }
@@ -112,16 +105,17 @@ $conn->close();
         ::-webkit-scrollbar-thumb { background: #c5c5c5; border-radius: 4px; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         .fade-in { animation: fadeIn 0.3s ease-out forwards; }
-        .active-tab {
-            background: linear-gradient(90deg, rgba(79,70,229,0.1) 0%, rgba(14,165,233,0.05) 100%);
-            border-left: 4px solid #4F46E5;
-            color: #4F46E5;
-        }
         .shadow-custom { box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
-        .sidebar-link:hover { background: linear-gradient(90deg, rgba(79,70,229,0.1) 0%, rgba(14,165,233,0.05) 100%); }
-        
-        .invoice-table th, .invoice-table td { padding: 0.75rem 1rem; text-align: left; }
-        .invoice-table thead th { background-color: #f3f4f6; font-weight: 600; color: #374151; }
+        .responsive-table thead { display: none; }
+        @media (min-width: 768px) {
+            .responsive-table thead { display: table-header-group; }
+        }
+        @media (max-width: 767px) {
+            .responsive-table tr { display: block; margin-bottom: 1rem; border: 1px solid #e5e7eb; border-radius: 0.5rem; padding: 1rem; }
+            .responsive-table td { display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 0; border-bottom: 1px dashed #e5e7eb; }
+            .responsive-table td:last-child { border-bottom: none; }
+            .responsive-table td::before { content: attr(data-label); font-weight: 600; color: #4b5563; margin-right: 1rem; }
+        }
     </style>
 </head>
 <body class="bg-gray-50 text-gray-800 flex flex-col min-h-screen">
@@ -129,120 +123,172 @@ $conn->close();
     <?php require_once 'header.php'; ?>
 
     <div class="flex flex-1">
-        
         <?php require_once 'sidebar.php'; ?>
 
         <main class="flex-1 p-4 sm:p-6 pb-24 md:pb-6">
-            <div class="flex flex-col sm:flex-row justify-between items-start mb-6">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6">
                 <div>
                     <h2 class="text-2xl font-bold text-gray-800">Invoice Details</h2>
                     <p class="text-gray-500 mt-1">Viewing record for Invoice #<?= htmlspecialchars($invoice['invoice_number'] ?? 'N/A'); ?></p>
                 </div>
                 <div class="flex items-center space-x-3 mt-4 sm:mt-0 w-full sm:w-auto">
-                    <a href="invoicing.php" class="w-1/2 sm:w-auto bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-2 rounded-lg flex items-center justify-center"><i class="fas fa-arrow-left mr-2"></i> Back</a>
+                    <a href="invoicing.php" class="w-1/3 sm:w-auto bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-2 rounded-lg flex items-center justify-center"><i class="fas fa-arrow-left mr-2"></i> Back</a>
                     <?php if ($invoice): ?>
-                    <a href="print_invoice.php?invoice_num=<?= urlencode($invoice['invoice_number']); ?>" target="_blank" class="w-1/2 sm:w-auto bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center justify-center"><i class="fas fa-print mr-2"></i> Print</a>
+                    <a href="edit_invoice.php?id=<?= $invoice['id']; ?>" class="w-1/3 sm:w-auto bg-primary hover:bg-indigo-700 text-white px-4 py-2 rounded-lg flex items-center justify-center"><i class="fas fa-edit mr-2"></i> Edit</a>
+                    <a href="print_invoice.php?invoice_num=<?= urlencode($invoice['invoice_number']); ?>" target="_blank" class="w-1/3 sm:w-auto bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center justify-center"><i class="fas fa-print mr-2"></i> Print</a>
                     <?php endif; ?>
                 </div>
             </div>
 
+            <?= $message_html ?>
+
             <?php if ($invoice): ?>
-            <div class="bg-white rounded-xl shadow-custom p-6 sm:p-8 fade-in max-w-4xl mx-auto">
-                <div class="flex flex-col sm:flex-row justify-between items-start mb-8 border-b pb-6">
-                    <div>
-                        <img src="PSB_LOGO.png" alt="PSB Logo" class="h-12 mb-4">
-                        <p class="font-semibold text-gray-800">Professional School of Business</p>
-                         <p class="text-sm text-gray-500">123 Learning Street, Dhaka, Bangladesh</p>
-                        <p class="text-sm text-gray-500">contact@psb.com</p>
-                        <p class="text-sm text-gray-500">+880 123 456 7890</p>
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- Left Column: Payment Form & History -->
+                <div class="lg:col-span-1 space-y-6">
+                    <!-- Record Payment Form -->
+                    <div class="bg-white rounded-xl shadow-custom p-6 fade-in">
+                        <h3 class="text-lg font-bold text-dark mb-4 border-b pb-2">Record a Payment</h3>
+                        <form action="process_payment.php" method="POST" class="space-y-4">
+                            <input type="hidden" name="invoice_id" value="<?= $invoice['id']; ?>">
+                            <div>
+                                <label for="amount" class="block text-sm font-medium text-gray-700">Amount (BDT)</label>
+                                <input type="number" name="amount" id="amount" step="0.01" min="0.01" max="<?= htmlspecialchars($invoice['balance_due']); ?>" required
+                                       class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary focus:border-primary"
+                                       <?= ($invoice['balance_due'] <= 0) ? 'disabled' : '' ?>>
+                            </div>
+                            <div>
+                                <label for="payment_date" class="block text-sm font-medium text-gray-700">Payment Date</label>
+                                <input type="date" name="payment_date" id="payment_date" required value="<?= date('Y-m-d'); ?>"
+                                       class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary focus:border-primary"
+                                       <?= ($invoice['balance_due'] <= 0) ? 'disabled' : '' ?>>
+                            </div>
+                            <div>
+                                <label for="payment_method" class="block text-sm font-medium text-gray-700">Payment Method</label>
+                                <select name="payment_method" id="payment_method" required
+                                        class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary focus:border-primary"
+                                        <?= ($invoice['balance_due'] <= 0) ? 'disabled' : '' ?>>
+                                    <option>Cash</option>
+                                    <option>Bank Transfer</option>
+                                    <option>Mobile Banking</option>
+                                    <option>Card</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label for="notes" class="block text-sm font-medium text-gray-700">Notes (Optional)</label>
+                                <textarea name="notes" id="notes" rows="2"
+                                          class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary focus:border-primary"
+                                          <?= ($invoice['balance_due'] <= 0) ? 'disabled' : '' ?>></textarea>
+                            </div>
+                            <button type="submit"
+                                    class="w-full bg-success hover:bg-green-700 text-white font-bold py-3 px-4 rounded-md flex items-center justify-center transition disabled:bg-gray-400 disabled:cursor-not-allowed"
+                                    <?= ($invoice['balance_due'] <= 0) ? 'disabled' : '' ?>>
+                                <i class="fas fa-check-circle mr-2"></i> Submit Payment
+                            </button>
+                        </form>
                     </div>
-                    <div class="text-left sm:text-right mt-4 sm:mt-0">
-                        <h2 class="text-3xl font-bold text-gray-800 uppercase">Invoice</h2>
-                        <p class="text-gray-500 mt-1"><?= htmlspecialchars($invoice['invoice_number']); ?></p>
-                    </div>
-                </div>
-
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
-                    <div>
-                        <h3 class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Billed To</h3>
-                        <p class="mt-2 font-bold text-lg text-dark"><?= htmlspecialchars($invoice['student_username']); ?></p>
-                        <p class="text-gray-600"><?= htmlspecialchars($invoice['student_acca_id']); ?></p>
-                        <p class="text-gray-600"><?= htmlspecialchars($invoice['student_email']); ?></p>
-                    </div>
-                    <div class="text-left md:text-right">
-                        <h3 class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Invoice Details</h3>
-                        <p class="mt-2 text-gray-600"><strong>Issue Date:</strong> <?= date('M d, Y', strtotime($invoice['issue_date'])); ?></p>
-                        <p class="text-gray-600"><strong>Due Date:</strong> <?= date('M d, Y', strtotime($invoice['due_date'])); ?></p>
-                        <p class="text-gray-600"><strong>Status:</strong> 
-                            <span class="font-semibold px-2 py-1 rounded-full text-xs <?= match ($invoice['status']) { 'Paid' => 'bg-green-100 text-green-800', 'Overdue' => 'bg-red-100 text-red-800', 'Cancelled' => 'bg-gray-100 text-gray-800', default => 'bg-yellow-100 text-yellow-800' }; ?>">
-                                <?= htmlspecialchars($invoice['status']); ?>
-                            </span>
-                        </p>
-                    </div>
-                </div>
-
-                <div class="overflow-x-auto">
-                    <table class="w-full invoice-table mb-8">
-                        <thead>
-                            <tr class="border-b border-gray-300">
-                                <th class="px-4 py-2">Description</th>
-                                <th class="px-4 py-2 text-right">Unit Price</th>
-                                <th class="px-4 py-2 text-right">Discount</th>
-                                <th class="px-4 py-2 text-right">Amount</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php if (!empty($fee_items)): ?>
-                                <?php foreach ($fee_items as $item): ?>
-                                    <tr class="border-b border-gray-200">
-                                        <td class="px-4 py-3">
-                                            <?= ucwords(htmlspecialchars($item['fee_type'])); ?>
-                                            <?php if (!empty($item['subject'])): ?>
-                                                <span class="block text-xs text-gray-500">- Subject: <?= htmlspecialchars($item['subject']); ?></span>
-                                            <?php endif; ?>
-                                        </td>
-                                        <td class="px-4 py-3 text-right">BDT <?= number_format($item['original_amount'], 2); ?></td>
-                                        <td class="px-4 py-3 text-right">BDT <?= number_format($item['discount_applied'], 2); ?></td>
-                                        <td class="px-4 py-3 text-right">BDT <?= number_format($item['amount'], 2); ?></td>
-                                    </tr>
+                    <!-- Payment History -->
+                    <div class="bg-white rounded-xl shadow-custom p-6 fade-in">
+                        <h3 class="text-lg font-bold text-dark mb-4 border-b pb-2">Payment History</h3>
+                        <div class="space-y-3 max-h-60 overflow-y-auto">
+                            <?php if (!empty($payment_history)): ?>
+                                <?php foreach ($payment_history as $payment): ?>
+                                <div class="p-3 bg-gray-50 rounded-lg">
+                                    <div class="flex justify-between items-center">
+                                        <p class="font-bold text-green-600">BDT <?= number_format($payment['amount'], 2); ?></p>
+                                        <p class="text-xs text-gray-500"><?= date('M d, Y', strtotime($payment['payment_date'])); ?></p>
+                                    </div>
+                                    <p class="text-sm text-gray-600 mt-1"><?= htmlspecialchars($payment['payment_method']); ?> - by <?= htmlspecialchars($payment['processed_by']); ?></p>
+                                    <?php if(!empty($payment['notes'])): ?>
+                                    <p class="text-xs text-gray-500 mt-1 italic">"<?= htmlspecialchars($payment['notes']); ?>"</p>
+                                    <?php endif; ?>
+                                </div>
                                 <?php endforeach; ?>
                             <?php else: ?>
-                                <tr>
-                                    <td colspan="4" class="px-4 py-3 text-center text-gray-500">No fee items found for this invoice.</td>
-                                </tr>
+                                <p class="text-center text-gray-500 py-4">No payments recorded yet.</p>
                             <?php endif; ?>
-                        </tbody>
-                    </table>
-                </div>
-
-                <div class="flex justify-end mt-8">
-                    <div class="w-full sm:w-1/2 md:w-1/3 space-y-3">
-                        <div class="flex justify-between">
-                            <span class="text-gray-600">Subtotal:</span>
-                            <span>BDT <?= number_format($calculated_subtotal, 2); ?></span>
-                        </div>
-                        <div class="flex justify-between">
-                            <span class="text-gray-600">Total Item Discount:</span>
-                            <span>BDT 0.00</span> </div>
-                         <?php if (($invoice['total_amount'] < $calculated_subtotal) && ($total_discount_for_display > 0)): // Show overall transaction discount only if applied ?>
-                            <div class="flex justify-between font-semibold text-red-600">
-                                <span>Transaction Discount:</span>
-                                <span>- BDT <?= number_format($total_discount_for_display, 2); ?></span>
-                            </div>
-                        <?php endif; ?>
-                        <div class="flex justify-between">
-                            <span class="text-gray-600">Tax (0%):</span>
-                            <span>BDT 0.00</span>
-                        </div>
-                        <div class="flex justify-between border-t pt-3 mt-3">
-                            <span class="font-bold text-xl text-dark">Total Due:</span>
-                            <span class="font-bold text-xl text-dark">BDT <?= number_format($invoice['total_amount'], 2); ?></span>
                         </div>
                     </div>
                 </div>
 
-                <div class="border-t pt-6 mt-8 text-center text-gray-500 text-sm">
-                    <p>Thank you for your business. Please make payments by the due date.</p>
+                <!-- Right Column: Invoice Details -->
+                <div class="lg:col-span-2 bg-white rounded-xl shadow-custom p-6 sm:p-8 fade-in">
+                    <div class="flex flex-col sm:flex-row justify-between items-start mb-6 border-b pb-6">
+                        <div>
+                            <img src="PSB_LOGO.png" alt="PSB Logo" class="h-12 mb-4">
+                            <p class="font-semibold text-gray-800">Professional School of Business</p>
+                            <p class="text-sm text-gray-500">First floor, Bashshah Mia Building, 1419, Nasirabad, Chittagong</p>
+                        </div>
+                        <div class="text-left sm:text-right mt-4 sm:mt-0">
+                            <h2 class="text-3xl font-bold text-gray-800 uppercase">Invoice</h2>
+                            <p class="text-gray-500 mt-1"><?= htmlspecialchars($invoice['invoice_number']); ?></p>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+                        <div>
+                            <h3 class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Billed To</h3>
+                            <p class="mt-2 font-bold text-lg text-dark"><?= htmlspecialchars($invoice['student_username']); ?></p>
+                            <p class="text-gray-600"><?= htmlspecialchars($invoice['student_acca_id']); ?></p>
+                        </div>
+                        <div class="text-left md:text-right">
+                             <h3 class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Details</h3>
+                            <p class="mt-2 text-gray-600"><strong>Issue Date:</strong> <?= date('M d, Y', strtotime($invoice['issue_date'])); ?></p>
+                            <p class="text-gray-600"><strong>Due Date:</strong> <?= date('M d, Y', strtotime($invoice['due_date'])); ?></p>
+                        </div>
+                    </div>
+
+                    <!-- Invoice Items Table -->
+                    <div class="mb-8">
+                        <h3 class="text-lg font-bold text-dark mb-4">Invoice Items</h3>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="p-3 text-left font-medium text-gray-600">Description</th>
+                                        <th class="p-3 text-right font-medium text-gray-600">Amount (BDT)</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y">
+                                    <?php if (!empty($fee_items)): ?>
+                                        <?php foreach ($fee_items as $item): ?>
+                                            <tr>
+                                                <td class="p-3">
+                                                    <?= htmlspecialchars(ucfirst(str_replace('_', ' ', $item['fee_type']))); ?>
+                                                    <?php if (!empty($item['subject'])): ?>
+                                                        <span class="text-xs text-gray-500 block"><?= htmlspecialchars($item['subject']); ?></span>
+                                                    <?php endif; ?>
+                                                </td>
+                                                <td class="p-3 text-right"><?= number_format($item['amount'], 2); ?></td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    <?php else: ?>
+                                        <tr><td colspan="2" class="p-3 text-center text-gray-500">No items found for this invoice.</td></tr>
+                                    <?php endif; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <!-- Financial Summary -->
+                    <div class="grid grid-cols-3 gap-4 text-center mb-8 p-4 bg-gray-50 rounded-lg">
+                        <div>
+                            <p class="text-sm text-gray-500">Total Amount</p>
+                            <p class="text-xl font-bold text-dark">BDT <?= number_format($invoice['total_amount'], 2); ?></p>
+                        </div>
+                        <div>
+                            <p class="text-sm text-gray-500">Amount Paid</p>
+                            <p class="text-xl font-bold text-success">BDT <?= number_format($invoice['amount_paid'], 2); ?></p>
+                        </div>
+                        <div>
+                            <p class="text-sm text-gray-500">Balance Due</p>
+                            <p class="text-xl font-bold text-danger">BDT <?= number_format($invoice['balance_due'], 2); ?></p>
+                        </div>
+                    </div>
+
+                    <div class="border-t pt-6 mt-8 text-center text-gray-500 text-sm">
+                        <p>Thank you for your business. Please make payments by the due date.</p>
+                    </div>
                 </div>
             </div>
             <?php else: ?>
@@ -250,7 +296,7 @@ $conn->close();
             <?php endif; ?>
         </main>
     </div>
-    
+
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             const userMenuButton = document.getElementById('user-menu-button');

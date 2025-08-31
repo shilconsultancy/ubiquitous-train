@@ -37,28 +37,36 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $allowed_roles = ['student', 'teacher', 'admin'];
 
     // --- Image Upload Logic ---
-    $profile_image_path = 'admin/assets/images/default_avatar.png'; 
-    
+    $profile_image_path = 'assets/images/default_avatar.png'; // Default path remains relative to the admin folder for display purposes
+
     if (isset($_FILES['profile_image']) && $_FILES['profile_image']['error'] === UPLOAD_ERR_OK) {
-        $upload_dir = 'assets/images/'; 
-        if (!is_dir($upload_dir)) { mkdir($upload_dir, 0755, true); }
+        // **FIX:** Standardized upload directory at the project root
+        $upload_dir = '../uploads/profile_pictures/';
+        if (!is_dir($upload_dir)) {
+            if (!mkdir($upload_dir, 0755, true)) {
+                $error_message = "Error: Failed to create upload directory. Check server permissions.";
+            }
+        }
 
-        $allowed_types = ['image/jpeg', 'image/png', 'image/gif'];
-        $max_size = 5 * 1024 * 1024; // 5 MB
+        if (empty($error_message)) {
+            $allowed_types = ['image/jpeg', 'image/png', 'image/gif'];
+            $max_size = 5 * 1024 * 1024; // 5 MB
 
-        if (!in_array($_FILES['profile_image']['type'], $allowed_types)) {
-            $error_message = "Invalid file type. Only JPG, PNG, and GIF are allowed.";
-        } elseif ($_FILES['profile_image']['size'] > $max_size) {
-            $error_message = "File is too large. Maximum size is 5 MB.";
-        } else {
-            $file_ext = pathinfo($_FILES['profile_image']['name'], PATHINFO_EXTENSION);
-            $new_filename = 'user_' . uniqid() . '.' . $file_ext;
-            $destination = $upload_dir . $new_filename;
-
-            if (move_uploaded_file($_FILES['profile_image']['tmp_name'], $destination)) {
-                $profile_image_path = 'admin/assets/images/' . $new_filename; 
+            if (!in_array($_FILES['profile_image']['type'], $allowed_types)) {
+                $error_message = "Invalid file type. Only JPG, PNG, and GIF are allowed.";
+            } elseif ($_FILES['profile_image']['size'] > $max_size) {
+                $error_message = "File is too large. Maximum size is 5 MB.";
             } else {
-                $error_message = "Failed to move uploaded file.";
+                $file_ext = pathinfo($_FILES['profile_image']['name'], PATHINFO_EXTENSION);
+                $new_filename = 'user_' . uniqid() . '.' . $file_ext;
+                $destination = $upload_dir . $new_filename;
+
+                if (move_uploaded_file($_FILES['profile_image']['tmp_name'], $destination)) {
+                    // **FIX:** Store a root-relative path in the database for consistency
+                    $profile_image_path = 'uploads/profile_pictures/' . $new_filename;
+                } else {
+                    $error_message = "Failed to move uploaded file.";
+                }
             }
         }
     }
@@ -79,7 +87,11 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 $registration_success = true;
                 $form_data = []; // Clear form data on success
             } else {
-                $error_message = "Error registering user: " . $stmt->error;
+                if ($conn->errno == 1062) { // Check for duplicate entry error
+                    $error_message = "Error: A user with this username, email, or ACCA ID already exists.";
+                } else {
+                    $error_message = "Error registering user: " . $stmt->error;
+                }
             }
             $stmt->close();
         }
@@ -174,7 +186,7 @@ $conn->close();
     <?php require_once 'header.php'; ?>
 
     <div class="flex flex-1">
-        
+
         <?php require_once 'sidebar.php'; ?>
 
         <main class="flex-1 p-4 sm:p-6 pb-24 md:pb-6">
@@ -197,7 +209,7 @@ $conn->close();
                 <?php endif; ?>
 
                 <form action="<?= htmlspecialchars($_SERVER["PHP_SELF"]); ?>" method="post" enctype="multipart/form-data" class="space-y-6">
-                    
+
                     <div>
                         <label class="block text-sm font-medium text-gray-700">Profile Picture (Optional)</label>
                         <div class="mt-2 flex items-center space-x-4">
@@ -258,7 +270,7 @@ $conn->close();
 
             const imageInput = document.getElementById('profile_image');
             const imagePreview = document.getElementById('imagePreview');
-            
+
             imageInput.addEventListener('change', function() {
                 const file = this.files[0];
                 if (file) {
@@ -274,12 +286,12 @@ $conn->close();
             const userMenuButton = document.getElementById('user-menu-button');
             const userMenu = document.getElementById('user-menu');
             if(userMenuButton){
-                userMenuButton.addEventListener('click', (e) => { 
-                    e.stopPropagation(); 
-                    userMenu.classList.toggle('hidden'); 
+                userMenuButton.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    userMenu.classList.toggle('hidden');
                 });
             }
-            
+
             // --- Mobile Menu Toggle (Crucial for sidebar visibility on mobile) ---
             const mobileMoreBtn = document.getElementById('mobile-more-btn');
             const mobileMoreMenu = document.getElementById('mobile-more-menu');
@@ -289,9 +301,9 @@ $conn->close();
                     mobileMoreMenu.classList.toggle('hidden');
                 });
             }
-            
+
             // This handles closing the menu if you click outside of it
-            document.addEventListener('click', (e) => { 
+            document.addEventListener('click', (e) => {
                 if (userMenu && !userMenu.classList.contains('hidden') && !userMenuButton.contains(e.target)) {
                      userMenu.classList.add('hidden');
                 }

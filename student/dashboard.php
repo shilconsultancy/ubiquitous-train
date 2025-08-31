@@ -1,66 +1,55 @@
 <?php
 // --- DEVELOPMENT/DEBUGGING: Display all PHP errors ---
-// This will help us see the actual error instead of a generic HTTP 500 page.
-// IMPORTANT: REMOVE THESE TWO LINES IN A LIVE PRODUCTION ENVIRONMENT.
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
 session_start(); // Always start the session first
 
-// Include the database connection file from the parent directory
-if (!file_exists('db_config.php')) { // Assuming db_config.php is in the same directory
-    die("FATAL ERROR: db_config.php not found. Please ensure the database connection file exists in the correct directory.");
+// Include the database connection file
+if (!file_exists('db_config.php')) {
+    die("FATAL ERROR: db_config.php not found. Please ensure the database connection file exists.");
 }
 require_once 'db_config.php';
 
 // --- Check for Database Connection Errors ---
-// The $conn object should be created in db_config.php.
-// This checks if the variable was set AND if the connection was successful.
 if (!isset($conn) || $conn->connect_error) {
-    // Stop the script and display a clear error message.
     die("Database Connection Failed: " . (isset($conn) ? $conn->connect_error : "The database connection object was not created. Check db_config.php."));
 }
 
-// --- Adjusted access control for student dashboard ---
-// Allow 'student', 'admin', and 'super_admin' roles to access this page IF they are logged in.
-// This allows admins/superadmins to view the student dashboard without redirection loops.
+// --- Access control ---
 if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true) {
     header('Location: ../index.php');
-    exit; // Not logged in at all, redirect to login page
+    exit;
 }
 
 // --- DATA FETCHING ---
 $current_user_id = $_SESSION['user_id'] ?? 0;
 
 // --- STEP 1: Get user details ---
-// Initialize variables with default values in case data isn't found
-$username = 'Guest';
-$acca_id = 'N/A';
+$username = $_SESSION['username'] ?? 'Guest';
+$acca_id = $_SESSION['acca_id'] ?? 'N/A';
+$profile_pic = '';
 
-// Prepare the SQL statement to fetch username and acca_id for the logged-in user
-$sql_user_details = "SELECT username, acca_id FROM users WHERE id = ?";
-if ($stmt_details = $conn->prepare($sql_user_details)) {
-    $stmt_details->bind_param("i", $current_user_id);
-    if ($stmt_details->execute()) {
-        $result_details = $stmt_details->get_result();
-        if ($user_data = $result_details->fetch_assoc()) {
-            $username = htmlspecialchars($user_data['username']);
-            // Use null coalescing operator to prevent error if acca_id is null
-            $acca_id = htmlspecialchars($user_data['acca_id'] ?? 'N/A');
+// Fetch user's profile image path
+$sql_user_image = "SELECT profile_image_path FROM users WHERE id = ?";
+if ($stmt_image = $conn->prepare($sql_user_image)) {
+    $stmt_image->bind_param("i", $current_user_id);
+    if ($stmt_image->execute()) {
+        $result_image = $stmt_image->get_result();
+        if ($user_image_data = $result_image->fetch_assoc()) {
+            $default_image_relative_path = 'admin/assets/images/default_avatar.png';
+            $image_relative_path = !empty($user_image_data['profile_image_path']) ? $user_image_data['profile_image_path'] : $default_image_relative_path;
+            $profile_pic = rtrim(BASE_URL, '/') . '/' . ltrim($image_relative_path, '/');
+            $profile_pic = str_replace('//', '/', $profile_pic);
         }
-    } else {
-        error_log("Error executing user details query: " . $stmt_details->error);
     }
-    $stmt_details->close();
-} else {
-    error_log("Error preparing user details query: " . $conn->error);
+    $stmt_image->close();
 }
 
 
 // --- STEP 2: Get recent completed exams for the table ---
-// This data is used for the table, so we need all recent exams.
 $user_exams = [];
-$sql_user = "SELECT id, subject, score, start_time, end_time FROM exam_sessions WHERE user_id = ? AND completed = 1 ORDER BY start_time DESC LIMIT 5";
+$sql_user = "SELECT id, subject, score, start_time, end_time FROM exam_sessions WHERE user_id = ? AND completed = 1 ORDER BY start_time DESC";
 if ($stmt_user = $conn->prepare($sql_user)) {
     $stmt_user->bind_param("i", $current_user_id);
     if ($stmt_user->execute()) {
@@ -76,9 +65,8 @@ if ($stmt_user = $conn->prepare($sql_user)) {
 
 // --- STEP 3: Get class averages ---
 $class_averages = [];
-// Collect all subjects from user's exams (even if duplicated) to query class averages for them
 $all_user_exam_subjects = array_column($user_exams, 'subject');
-$chart_subjects_unique_for_avg_query = array_unique($all_user_exam_subjects); // Use unique subjects for this query
+$chart_subjects_unique_for_avg_query = array_unique($all_user_exam_subjects);
 
 if (!empty($chart_subjects_unique_for_avg_query)) {
     $placeholders = implode(',', array_fill(0, count($chart_subjects_unique_for_avg_query), '?'));
@@ -100,10 +88,8 @@ if (!empty($chart_subjects_unique_for_avg_query)) {
     }
 }
 
-// --- STEP 4: Prepare chart data (FIXED FOR UNIQUE SUBJECTS AND HIGHEST SCORES) ---
+// --- STEP 4: Prepare chart data (Highest Scores per Subject) ---
 $user_subject_highest_scores = [];
-
-// Aggregate user's highest scores by subject
 foreach ($user_exams as $exam) {
     $subject = $exam['subject'];
     if (!isset($user_subject_highest_scores[$subject]) || $exam['score'] > $user_subject_highest_scores[$subject]) {
@@ -112,31 +98,20 @@ foreach ($user_exams as $exam) {
 }
 
 $chart_labels = [];
-$chart_user_scores = []; // This will now hold highest scores
+$chart_user_scores = [];
 $chart_class_average_scores = [];
 
-// Sort subjects alphabetically for consistent chart display
 ksort($user_subject_highest_scores);
 
-// Populate chart data with unique subjects and their highest scores
 foreach ($user_subject_highest_scores as $subject => $highest_score) {
     $chart_labels[] = $subject;
     $chart_user_scores[] = $highest_score;
-    // Fetch the class average for this specific subject, defaulting to 0 if not found
     $chart_class_average_scores[] = $class_averages[$subject] ?? 0;
 }
 
-// If no exams, ensure chart data is empty arrays to prevent JavaScript errors
-if (empty($chart_labels)) {
-    $chart_labels = [];
-    $chart_user_scores = [];
-    $chart_class_average_scores = [];
-}
-
-// --- STEP 5: Get recent announcements from the notices table ---
+// --- STEP 5: Get recent announcements ---
 $announcements = [];
-// FIX: Fetch 'content' as well for the notice board display
-$sql_announcements = "SELECT title, content FROM notices WHERE status = 'Published' ORDER BY published_date DESC LIMIT 10";
+$sql_announcements = "SELECT title, content, published_date FROM notices WHERE status = 'Published' ORDER BY published_date DESC LIMIT 10";
 $result_announcements = $conn->query($sql_announcements);
 if ($result_announcements) {
     $announcements = $result_announcements->fetch_all(MYSQLI_ASSOC);
@@ -144,311 +119,313 @@ if ($result_announcements) {
     error_log("Error fetching announcements: " . $conn->error);
 }
 
+// --- PREPARE SLIDER NOTICES ---
+$slider_notices_string = '';
+if (!empty($announcements)) {
+    $slider_notices = [];
+    foreach ($announcements as $announcement) {
+        $slider_notices[] = htmlspecialchars($announcement['title']);
+    }
+    $slider_notices_string = implode(' &nbsp; &nbsp; ★ &nbsp; &nbsp; ', $slider_notices);
+}
+
+
+// --- STEP 6: Calculate Stats for Stat Cards ---
+$courses_taken_count = count($user_subject_highest_scores);
+$total_score = 0;
+$passed_exams = 0;
+foreach($user_subject_highest_scores as $score) {
+    $total_score += $score;
+    if ($score >= 50) {
+        $passed_exams++;
+    }
+}
+$average_score = $courses_taken_count > 0 ? round($total_score / $courses_taken_count) : 0;
+$pass_rate = $courses_taken_count > 0 ? round(($passed_exams / $courses_taken_count) * 100) : 0;
+
+
 // Close the database connection
 $conn->close();
+
+// Set the current page for the sidebar active state
+$currentPage = 'dashboard';
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Student Learning Platform</title>
+    <title>Student Dashboard | PSB Learning Hub</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/js/all.min.js"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: { 'theme-red': '#c51a1d', 'theme-dark-red': '#a81013', 'theme-black': '#1a1a1a', 'light-gray': '#f5f7fa' },
-                    fontFamily: { sans: ['Inter', 'sans-serif'] }
-                }
-            }
-        }
-    </script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'Inter', sans-serif; }
-        .solid-header { background: linear-gradient(to right, #c51a1d, #a81013); }
-        .dashboard-card { transition: transform 0.3s ease, box-shadow 0.3s ease; }
-        .dashboard-card:hover { transform: translateY(-4px); box-shadow: 0 12px 20px -10px rgba(0,0,0,0.15); }
-        .tip-card { border-left: 4px solid #c51a1d; }
-        .chart-legend { display: flex; justify-content: center; gap: 20px; padding-top: 10px; flex-wrap: wrap; }
-        .legend-item { display: flex; align-items: center; font-size: 0.8rem; }
-        .legend-color { width: 12px; height: 12px; margin-right: 5px; border-radius: 2px; }
+        .sidebar-link { transition: background-color 0.3s, color 0.3s; }
+        .sidebar-link:hover, .sidebar-link.active {
+            background-color: #c51a1d;
+            color: white;
+        }
+        .sidebar-link:hover .sidebar-icon, .sidebar-link.active .sidebar-icon {
+            color: white;
+        }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
 
-        /* FIX: Styles for the new static notice board section */
-        .notice-board-section {
-            padding: 2rem;
-            background-color: #ffffff;
-            border-radius: 0.75rem;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-            margin-top: 2rem; /* Spacing from the content above */
+        @keyframes marquee {
+            0%   { transform: translateX(100%); }
+            100% { transform: translateX(-100%); }
         }
-        .notice-item {
-            border-bottom: 1px solid #e2e8f0; /* Light gray border between notices */
-            padding-bottom: 1.5rem;
-            margin-bottom: 1.5rem;
+        .animate-marquee {
+            animation: marquee 40s linear infinite;
         }
-        .notice-item:last-child {
-            border-bottom: none;
-            margin-bottom: 0;
-            padding-bottom: 0;
-        }
-        .notice-title {
-            font-size: 1.25rem; /* text-xl */
-            font-weight: 700; /* font-bold */
-            color: #c51a1d; /* theme-red */
-            margin-bottom: 0.5rem;
-        }
-        .notice-content {
-            font-size: 0.95rem; /* text-base slightly smaller */
-            color: #4a5568; /* gray-700 */
-            line-height: 1.6;
-        }
-
-        /* --- NEW MOBILE MENU STYLES --- */
-        .mobile-menu {
-            transition: transform 0.3s ease-in-out;
+        .marquee-container:hover .animate-marquee {
+            animation-play-state: paused;
         }
     </style>
 </head>
-<body class="bg-light-gray text-gray-800">
-    <div class="min-h-screen flex flex-col">
-        <!-- Header -->
-        <header class="solid-header text-white shadow-lg sticky top-0 z-50">
-            <div class="container mx-auto px-4 sm:px-6 py-4">
-                <div class="flex justify-between items-center">
-                    <!-- Logo / Title -->
-                    <div class="text-center md:text-left">
-                        <h1 class="text-2xl font-bold tracking-tight">PSB Learning Hub</h1>
-                    </div>
+<body class="bg-gray-50">
+    <div class="h-screen flex flex-col">
+        <!-- Header: Full-width at the top -->
+        <?php require_once 'header.php'; ?>
 
-                    <!-- Desktop Menu -->
-                    <div class="hidden md:flex items-center space-x-4">
-                        <div class="text-right">
-                            <div class="font-semibold">Welcome back, <span class="font-bold"><?php echo $username; ?>!</span></div>
-                            <p class="text-sm text-gray-200 mt-1">ACCA ID: <span class="font-medium"><?php echo $acca_id; ?></span></p>
+        <!-- Main container for sidebar and content -->
+        <div class="flex flex-1 overflow-hidden">
+            <!-- Sidebar: On the left -->
+            <?php require_once 'sidebar.php'; ?>
+
+            <!-- Content Area: Takes remaining space -->
+            <div class="flex-1 flex flex-col overflow-hidden">
+                <!-- Notice Slider -->
+                <?php if (!empty($slider_notices_string)): ?>
+                <div class="bg-theme-black text-black shadow-md overflow-hidden marquee-container flex-shrink-0">
+                    <div class="container mx-auto px-6 py-2 flex items-center space-x-4">
+                        <span class="bg-theme-red text-black text-xs font-bold px-2 py-1 rounded-md flex-shrink-0">UPDATES:</span>
+                        <div class="flex-1 relative h-6 overflow-hidden">
+                            <p class="absolute whitespace-nowrap animate-marquee font-medium">
+                                <?php echo $slider_notices_string; ?>
+                            </p>
                         </div>
-                        <a href="../logout.php" class="inline-block bg-white text-theme-red font-semibold py-2 px-5 rounded-full shadow-md hover:bg-gray-100 hover:shadow-lg transition-all duration-300 ease-in-out text-sm">
-                            <i class="fas fa-sign-out-alt mr-2"></i> Logout
-                        </a>
-                    </div>
-
-                    <!-- Mobile Menu Button -->
-                    <div class="md:hidden">
-                        <button id="mobile-menu-button" class="text-white focus:outline-none">
-                            <i class="fas fa-bars text-2xl"></i>
-                        </button>
                     </div>
                 </div>
-            </div>
-        </header>
+                <?php endif; ?>
 
-        <!-- Mobile Menu (Hidden by default) -->
-        <div id="mobile-menu" class="mobile-menu fixed inset-0 bg-black bg-opacity-50 z-40 transform -translate-x-full">
-            <div class="w-64 h-full bg-white shadow-xl p-6">
-                <div class="flex justify-between items-center mb-8">
-                    <h2 class="text-lg font-bold text-theme-red">Menu</h2>
-                    <button id="mobile-menu-close-button" class="text-slate-600 focus:outline-none">
-                        <i class="fas fa-times text-2xl"></i>
-                    </button>
-                </div>
-                <div class="space-y-4">
-                    <div class="text-left p-4 bg-light-gray rounded-lg">
-                        <div class="font-semibold text-slate-800 flex items-center">
-                            <i class="fas fa-user-circle mr-2 text-slate-500"></i> <?php echo $username; ?>
+                <!-- Main scrollable content -->
+                <main class="flex-1 overflow-y-auto p-6">
+                    <div class="container mx-auto">
+                        <!-- Welcome Banner -->
+                        <div class="bg-white rounded-2xl shadow-sm p-6 mb-6 flex items-center space-x-6">
+                            <img src="<?php echo htmlspecialchars($profile_pic); ?>" alt="Profile Picture" class="w-20 h-20 rounded-full object-cover border-4 border-white shadow-md">
+                            <div>
+                                <h2 class="text-2xl font-bold text-gray-800">Welcome back, <?php echo htmlspecialchars($username); ?>!</h2>
+                                <p class="text-gray-500">ACCA ID: <?php echo htmlspecialchars($acca_id); ?></p>
+                                <p class="text-sm text-gray-500 mt-1">Let's continue your learning journey.</p>
+                            </div>
                         </div>
-                        <p class="text-sm text-slate-500 mt-1">ACCA ID: <span class="font-medium"><?php echo $acca_id; ?></span></p>
-                    </div>
-                    <a href="../logout.php" class="w-full text-left inline-block bg-theme-red text-white font-semibold py-3 px-4 rounded-lg shadow-md hover:bg-theme-dark-red transition-all duration-300 ease-in-out">
-                        <i class="fas fa-sign-out-alt mr-2"></i> Logout
-                    </a>
-                </div>
-            </div>
-        </div>
 
+                        <!-- Stat Cards -->
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+                            <div class="bg-white p-6 rounded-2xl shadow-sm flex items-center space-x-4">
+                                <div class="p-3 rounded-full bg-blue-100"><i class="fas fa-book-open text-2xl text-blue-500"></i></div>
+                                <div>
+                                    <p class="text-sm text-gray-500">Papers Taken</p>
+                                    <p class="text-2xl font-bold text-gray-800"><?php echo $courses_taken_count; ?></p>
+                                </div>
+                            </div>
+                            <div class="bg-white p-6 rounded-2xl shadow-sm flex items-center space-x-4">
+                                <div class="p-3 rounded-full bg-green-100"><i class="fas fa-check-circle text-2xl text-green-500"></i></div>
+                                <div>
+                                    <p class="text-sm text-gray-500">Pass Rate</p>
+                                    <p class="text-2xl font-bold text-gray-800"><?php echo $pass_rate; ?>%</p>
+                                </div>
+                            </div>
+                            <div class="bg-white p-6 rounded-2xl shadow-sm flex items-center space-x-4">
+                                <div class="p-3 rounded-full bg-yellow-100"><i class="fas fa-star text-2xl text-yellow-500"></i></div>
+                                <div>
+                                    <p class="text-sm text-gray-500">Average Score</p>
+                                    <p class="text-2xl font-bold text-gray-800"><?php echo $average_score; ?>%</p>
+                                </div>
+                            </div>
+                            <div class="bg-white p-6 rounded-2xl shadow-sm flex items-center space-x-4">
+                                <div class="p-3 rounded-full bg-red-100"><i class="fas fa-pen-alt text-2xl text-red-500"></i></div>
+                                <div>
+                                    <p class="text-sm text-gray-500">Mocks Completed</p>
+                                    <p class="text-2xl font-bold text-gray-800"><?php echo count($user_exams); ?></p>
+                                </div>
+                            </div>
+                        </div>
 
-        <main class="flex-grow container mx-auto px-4 py-6">
-            <!-- Main content grid -->
-            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <!-- Left Column: Recent Mock Exam Results -->
-                <div class="lg:col-span-2">
-                    <div class="dashboard-card bg-white rounded-xl shadow-md p-6 mb-6">
-                        <div class="flex justify-between items-center mb-6 flex-wrap"> <h2 class="text-xl font-bold text-theme-black">Recent Mock Exam Results</h2>
-                        </div>
-                        <div class="h-80"> <canvas id="examChart"></canvas> </div>
-                        <div class="chart-legend">
-                            <div class="legend-item"><div class="legend-color bg-theme-red"></div> <span class="text-theme-black">Your Score</span></div>
-                            <div class="legend-item"><div class="legend-color bg-gray-400"></div> <span class="text-theme-black">Class Average</span></div>
-                        </div>
-                        <div class="overflow-x-auto mt-8">
-                            <table class="w-full border-collapse">
-                                <thead>
-                                    <tr class="bg-gray-100">
-                                        <th class="p-3 text-left text-theme-black font-medium">Paper</th>
-                                        <th class="p-3 text-left text-theme-black font-medium">Score</th>
-                                        <th class="p-3 text-left text-theme-black font-medium">Class Avg.</th>
-                                        <th class="p-3 text-left text-theme-black font-medium">Date</th>
-                                        <th class="p-3 text-left text-theme-black font-medium">Time Taken</th>
-                                        <th class="p-3 text-left text-theme-black font-medium">Action</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <?php if (!empty($user_exams)): ?>
-                                        <?php foreach ($user_exams as $exam): ?>
-                                            <?php
-                                                $time_taken_str = 'N/A';
-                                                if (!is_null($exam['start_time']) && !is_null($exam['end_time'])) {
-                                                    $interval = (new DateTime($exam['start_time']))->diff(new DateTime($exam['end_time']));
-                                                    $time_taken_str = $interval->format('%h h %i m');
-                                                }
-                                                $score_class = $exam['score'] >= 65 ? 'bg-green-100 text-green-800' : ($exam['score'] >= 50 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800');
-                                            ?>
-                                            <tr class="border-b border-gray-200 hover:bg-gray-50">
-                                                <td class="p-3 font-medium text-theme-black"><?php echo htmlspecialchars($exam['subject']); ?></td>
-                                                <td class="p-3"><span class="px-2 py-1 <?php echo $score_class; ?> rounded-md"><?php echo htmlspecialchars($exam['score']); ?>%</span></td>
-                                                <td class="p-3 text-gray-600"><?php echo htmlspecialchars($class_averages[$exam['subject']] ?? 'N/A'); ?>%</td>
-                                                <td class="p-3 text-gray-600"><?php echo date('d M Y', strtotime($exam['start_time'])); ?></td>
-                                                <td class="p-3 text-gray-600"><?php echo $time_taken_str; ?></td>
-                                                <td class="p-3"><a href="review_exam.php?session_id=<?php echo $exam['id']; ?>" class="bg-slate-200 text-slate-800 px-3 py-1 rounded text-sm font-medium hover:bg-slate-300 transition-colors">Review</a></td>
-                                            </tr>
+                        <!-- Main Grid -->
+                        <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                            <div class="xl:col-span-2 bg-white rounded-2xl shadow-sm p-6">
+                                <h3 class="text-xl font-bold text-gray-800 mb-4">Performance Overview (Highest Scores)</h3>
+                                <div class="h-96">
+                                    <canvas id="examChart"></canvas>
+                                </div>
+                            </div>
+                            <div class="bg-white rounded-2xl shadow-sm p-6">
+                                <h3 class="text-xl font-bold text-gray-800 mb-4">Recent Announcements</h3>
+                                <div class="space-y-4">
+                                    <?php if (!empty($announcements)): 
+                                        $recent_announcements = array_slice($announcements, 0, 3);
+                                    ?>
+                                        <?php foreach ($recent_announcements as $announcement): ?>
+                                        <div class="p-4 bg-gray-50 rounded-lg">
+                                            <div class="flex items-start space-x-3">
+                                                <i class="fas fa-bullhorn text-theme-red mt-1"></i>
+                                                <div>
+                                                    <p class="font-semibold text-gray-800"><?php echo htmlspecialchars($announcement['title']); ?></p>
+                                                    <p class="text-xs text-gray-400 mt-1"><?php echo date('d M Y', strtotime($announcement['published_date'])); ?></p>
+                                                </div>
+                                            </div>
+                                        </div>
                                         <?php endforeach; ?>
                                     <?php else: ?>
-                                        <tr><td colspan="6" class="p-4 text-center text-gray-500">No mock exam results found. Time to take your first test!</td></tr>
+                                        <div class="text-center p-4 text-gray-500">
+                                            <i class="fas fa-info-circle text-2xl mb-2"></i>
+                                            <p>No new announcements.</p>
+                                        </div>
                                     <?php endif; ?>
-                                </tbody>
-                            </table>
-                        </div>
-                        <div class="mt-8 flex justify-end">
-                            <a href='exam-selection.php' >
-                                <button class="bg-theme-red hover:bg-theme-dark-red text-white font-semibold py-3 px-6 rounded-lg transition duration-300 ease-in-out transform hover:scale-105">
-                                    <i class="fas fa-pen mr-2"></i> Attempt a New Mock
-                                </button>
-                            </a>
-                        </div>
-                    </div>
-                </div>
-                <!-- Right Column: Tips and Resources -->
-                <div class="lg:col-span-1">
-                    <div class="dashboard-card tip-card bg-white rounded-xl shadow-md p-6 mb-6">
-                        <div class="flex items-center justify-between mb-4">
-                            <h2 class="text-lg font-bold text-theme-black">Examiner's Tips</h2>
-                            <i class="fas fa-lightbulb text-theme-red text-xl"></i>
-                        </div>
-                        <div class="mb-4">
-                            <div id="currentTip" class="bg-gray-50 p-4 rounded-lg"><p class="text-theme-black"></p></div>
-                        </div>
-                        <div class="flex justify-center">
-                            <button id="newTipBtn" class="bg-gray-100 hover:bg-gray-200 text-theme-red font-medium py-2 px-4 rounded-md transition-colors">
-                                <i class="fas fa-sync-alt mr-2"></i> Show Another Tip
-                            </button>
-                        </div>
-                    </div>
-                    <div class="dashboard-card bg-white rounded-xl shadow-md p-6">
-                         <div class="flex items-center justify-between mb-4">
-                            <h2 class="text-lg font-bold text-theme-black">Your Resources</h2>
-                            <i class="fas fa-bookmark text-theme-red text-xl"></i>
-                        </div>
-                        <div class="space-y-4">
-                            <!-- New "My Profile" link added here -->
-                            <a href="view_profile.php" class="group flex items-center p-3 bg-gray-50 rounded-lg hover:bg-theme-red transition-colors">
-                                <div class="bg-theme-red text-white p-2 rounded-full mr-3">
-                                    <i class="fas fa-user-circle w-5 h-5"></i>
                                 </div>
-                                <span class="font-medium text-theme-black group-hover:text-white">My Profile</span>
-                            </a>
-                            <a href="full-history.php" class="group flex items-center p-3 bg-gray-50 rounded-lg hover:bg-theme-red transition-colors"><div class="bg-theme-red text-white p-2 rounded-full mr-3"><i class="fas fa-chart-line w-5 h-5"></i></div><span class="font-medium text-theme-black group-hover:text-white">Full Mock History</span></a>
-                            <a href="tutors.php" class="group flex items-center p-3 bg-gray-50 rounded-lg hover:bg-theme-red transition-colors"><div class="bg-theme-red text-white p-2 rounded-full mr-3"><i class="fas fa-comments w-5 h-5"></i></div><span class="font-medium text-theme-black group-hover:text-white">Contact a Tutor</span></a>
-                            <a href="resources.php" class="group flex items-center p-3 bg-gray-50 rounded-lg hover:bg-theme-red transition-colors"><div class="bg-theme-red text-white p-2 rounded-full mr-3"><i class="fas fa-book w-5 h-5"></i></div><span class="font-medium text-theme-black group-hover:text-white">Resource Library</span></a>
-                            <a href="support.php" class="group flex items-center p-3 bg-gray-50 rounded-lg hover:bg-theme-red transition-colors"><div class="bg-theme-red text-white p-2 rounded-full mr-3"><i class="fas fa-headset w-5 h-5"></i></div><span class="font-medium text-theme-black group-hover:text-white">Get Support</span></a>
-                            <!-- <a href="schedule-exam.php" class="group flex items-center p-3 bg-gray-50 rounded-lg hover:bg-theme-red transition-colors"><div class="bg-theme-red text-white p-2 rounded-full mr-3"><i class="fas fa-calendar-alt w-5 h-5"></i></div><span class="font-medium text-theme-black group-hover:text-white">Schedule Exam</span></a> -->
+                            </div>
+                        </div>
+
+                        <!-- Recent Exam Results Table -->
+                        <div class="mt-6 bg-white rounded-2xl shadow-sm p-6">
+                            <div class="flex items-center justify-between mb-4">
+                                <h3 class="text-xl font-bold text-gray-800">Recent Mock Results</h3>
+                                <a href="exam-selection.php" class="bg-theme-red hover:bg-theme-dark-red text-white font-semibold py-2 px-4 rounded-lg transition duration-300">
+                                    Attempt New Mock
+                                </a>
+                            </div>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-left">
+                                    <thead>
+                                        <tr class="bg-gray-100">
+                                            <th class="p-3 font-semibold text-gray-600">Paper</th>
+                                            <th class="p-3 font-semibold text-gray-600">Score</th>
+                                            <th class="p-3 font-semibold text-gray-600">Class Avg.</th>
+                                            <th class="p-3 font-semibold text-gray-600">Date</th>
+                                            <th class="p-3 font-semibold text-gray-600">Time Taken</th>
+                                            <th class="p-3 font-semibold text-gray-600">Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php if (!empty($user_exams)): ?>
+                                            <?php $recent_exams = array_slice($user_exams, 0, 5); ?>
+                                            <?php foreach ($recent_exams as $exam): ?>
+                                                <?php
+                                                    $time_taken_str = 'N/A';
+                                                    if (!is_null($exam['start_time']) && !is_null($exam['end_time'])) {
+                                                        $interval = (new DateTime($exam['start_time']))->diff(new DateTime($exam['end_time']));
+                                                        $time_taken_str = $interval->format('%h h %i m');
+                                                    }
+                                                    $score_class = $exam['score'] >= 50 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
+                                                ?>
+                                                <tr class="border-b border-gray-200 hover:bg-gray-50">
+                                                    <td class="p-3 font-medium text-gray-800"><?php echo htmlspecialchars($exam['subject']); ?></td>
+                                                    <td class="p-3"><span class="px-2 py-1 text-sm font-semibold <?php echo $score_class; ?> rounded-full"><?php echo htmlspecialchars($exam['score']); ?>%</span></td>
+                                                    <td class="p-3 text-gray-600"><?php echo htmlspecialchars($class_averages[$exam['subject']] ?? 'N/A'); ?>%</td>
+                                                    <td class="p-3 text-gray-600"><?php echo date('d M Y', strtotime($exam['start_time'])); ?></td>
+                                                    <td class="p-3 text-gray-600"><?php echo $time_taken_str; ?></td>
+                                                    <td class="p-3"><a href="review_exam.php?session_id=<?php echo $exam['id']; ?>" class="bg-gray-200 text-gray-800 px-3 py-1 rounded text-sm font-medium hover:bg-gray-300 transition-colors">Review</a></td>
+                                                </tr>
+                                            <?php endforeach; ?>
+                                        <?php else: ?>
+                                            <tr><td colspan="6" class="p-4 text-center text-gray-500">No mock exam results found. Time to take your first test!</td></tr>
+                                        <?php endif; ?>
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
                     </div>
-                </div>
+                </main>
             </div>
-            
-            <!-- NEW: Full-width Notice Board Section -->
-            <div class="notice-board-section container mx-auto mt-8">
-                <h2 class="text-2xl font-bold text-theme-black mb-6 text-center">Important Announcements</h2>
-                <?php if (!empty($announcements)): ?>
-                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        <?php foreach ($announcements as $announcement): ?>
-                            <div class="bg-gray-50 p-6 rounded-lg shadow-sm border border-gray-200">
-                                <h3 class="notice-title"><?php echo htmlspecialchars($announcement['title']); ?></h3>
-                                <p class="notice-content"><?php echo nl2br(htmlspecialchars($announcement['content'])); ?></p>
-                            </div>
-                        <?php endforeach; ?>
-                    </div>
-                <?php else: ?>
-                    <div class="text-center p-8 bg-gray-50 rounded-lg">
-                        <i class="fas fa-bullhorn text-4xl text-gray-400 mb-4"></i>
-                        <p class="text-gray-500">No important announcements at this time. Check back later!</p>
-                    </div>
-                <?php endif; ?>
-            </div>
-
-        </main>
-
-        <footer class="bg-theme-black text-white py-6">
-            <div class="container mx-auto px-4">
-                <div class="flex flex-col md:flex-row justify-between items-center">
-                    <div class="mb-4 md:mb-0">
-                        <h3 class="font-bold text-xl">PSB Learning Hub</h3>
-                        <p class="text-gray-400 text-sm">Preparing tomorrow's leaders</p>
-                    </div>
-                    <div class="flex space-x-6">
-                        <a href="#" class="hover:text-theme-red transition-colors"><i class="fab fa-facebook-f"></i></a>
-                        <a href="#" class="hover:text-theme-red transition-colors"><i class="fab fa-twitter"></i></a>
-                        <a href="#" class="hover:text-theme-red transition-colors"><i class="fab fa-linkedin-in"></i></a>
-                        <a href="#" class="hover:text-theme-red transition-colors"><i class="fab fa-instagram"></i></a>
-                    </div>
-                </div>
-                <div class="border-t border-gray-700 mt-6 pt-6 text-sm text-gray-400 text-center">
-                    <p>&copy; <?php echo date('Y'); ?> Learning Hub. All rights reserved.</p>
-                </div>
-            </div>
-        </footer>
+        </div>
     </div>
+    <div id="sidebar-overlay" class="fixed inset-0 bg-black bg-opacity-50 z-30 hidden md:hidden"></div>
 
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            // Chart.js initialization
-            const ctx = document.getElementById('examChart').getContext('2d');
-            const chart = new Chart(ctx, {
-                type: 'bar', data: { labels: <?php echo json_encode($chart_labels); ?>, datasets: [ { label: 'Your Score', data: <?php echo json_encode($chart_user_scores); ?>, backgroundColor: '#c51a1d', borderRadius: 6, barPercentage: 0.7 }, { label: 'Class Average', data: <?php echo json_encode($chart_class_average_scores); ?>, backgroundColor: '#a0a0a0', borderRadius: 6, barPercentage: 0.7 } ] },
-                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { backgroundColor: '#1a1a1a', titleFont: { size: 14, family: "Inter" }, bodyFont: { size: 13, family: "Inter" }, padding: 12, displayColors: false, callbacks: { label: (c) => `${c.dataset.label}: ${c.parsed.y}%` } } }, scales: { y: { beginAtZero: true, max: 100, grid: { color: 'rgba(0, 0, 0, 0.05)' }, ticks: { color: '#1a1a1a', font: { family: "Inter" } } }, x: { grid: { display: false }, ticks: { color: '#1a1a1a', font: { family: "Inter" } } } } }
-            });
-
-            // Tip rotation functionality
-            const tips = [ "<strong>Stay consistent:</strong> Regular, short study sessions are more effective than cramming.", "<strong>Understand, don't memorize:</strong> Focus on grasping concepts rather than just memorizing facts.", "<strong>Practice past papers:</strong> This is key to understanding exam patterns and time management.", "<strong>Review mistakes:</strong> Learn from your errors by revisiting incorrect answers.", "<strong>Take breaks:</strong> Step away from your studies to refresh your mind and avoid burnout." ];
-            const tipElement = document.getElementById('currentTip').querySelector('p');
-            const newTipBtn = document.getElementById('newTipBtn');
-            let currentTipIndex = 0;
-            function showTip() { tipElement.innerHTML = tips[currentTipIndex]; }
-            newTipBtn.addEventListener('click', () => { currentTipIndex = (currentTipIndex + 1) % tips.length; showTip(); });
-            showTip();
-
-            // --- MOBILE MENU SCRIPT ---
-            const menuButton = document.getElementById('mobile-menu-button');
-            const closeButton = document.getElementById('mobile-menu-close-button');
-            const mobileMenu = document.getElementById('mobile-menu');
-
-            menuButton.addEventListener('click', () => {
-                mobileMenu.classList.remove('-translate-x-full');
-            });
-
-            closeButton.addEventListener('click', () => {
-                mobileMenu.classList.add('-translate-x-full');
-            });
-            
-            // Close menu if user clicks on the overlay
-            mobileMenu.addEventListener('click', (e) => {
-                if (e.target === mobileMenu) {
-                    mobileMenu.classList.add('-translate-x-full');
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // --- Chart.js Initialization ---
+    const chartLabels = <?php echo json_encode($chart_labels); ?>;
+    if (chartLabels.length > 0) {
+        const ctx = document.getElementById('examChart').getContext('2d');
+        const chart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: chartLabels,
+                datasets: [{
+                    label: 'Your Highest Score',
+                    data: <?php echo json_encode($chart_user_scores); ?>,
+                    backgroundColor: '#c51a1d',
+                    borderColor: '#a81013',
+                    borderWidth: 1,
+                    borderRadius: 6,
+                    barPercentage: 0.6
+                }, {
+                    label: 'Class Average',
+                    data: <?php echo json_encode($chart_class_average_scores); ?>,
+                    backgroundColor: '#e5e7eb',
+                    borderColor: '#d1d5db',
+                    borderWidth: 1,
+                    borderRadius: 6,
+                    barPercentage: 0.6
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'top', align: 'end' },
+                    tooltip: {
+                        backgroundColor: '#1a1a1a',
+                        titleFont: { size: 14, family: "Inter" },
+                        bodyFont: { size: 13, family: "Inter" },
+                        padding: 12,
+                        callbacks: { label: (c) => `${c.dataset.label}: ${c.parsed.y}%` }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        max: 100,
+                        grid: { color: '#f3f4f6' },
+                        ticks: { color: '#6b7280', font: { family: "Inter" } }
+                    },
+                    x: {
+                        grid: { display: false },
+                        ticks: { color: '#6b7280', font: { family: "Inter" } }
+                    }
                 }
-            });
+            }
         });
-    </script>
+    } else {
+        const chartContainer = document.getElementById('examChart').parentElement;
+        chartContainer.innerHTML = `<div class="flex items-center justify-center h-full text-gray-500"><p>No performance data yet. Complete a mock exam to see your progress!</p></div>`;
+    }
+
+    // --- Mobile Menu Toggle ---
+    const menuButton = document.getElementById('menu-button');
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebar-overlay');
+
+    const toggleSidebar = () => {
+        sidebar.classList.toggle('-translate-x-full');
+        overlay.classList.toggle('hidden');
+    };
+
+    if (menuButton && sidebar && overlay) {
+        menuButton.addEventListener('click', (e) => {
+            e.stopPropagation();
+            toggleSidebar();
+        });
+        overlay.addEventListener('click', toggleSidebar);
+    }
+});
+</script>
 </body>
 </html>

@@ -3,11 +3,10 @@
 // This file is assumed to be located inside the 'student/' directory.
 
 // --- Database Credentials ---
-// IMPORTANT: Replace these with your actual database credentials.
-$db_host = 'localhost'; // Your database host (e.g., 'localhost', IP address)
-$db_user = 'root';      // Your database username
-$db_pass = '';          // Your database password (empty for XAMPP default root)
-$db_name = 'lms_db';    // Your database name (as provided in schema)
+$db_host = "localhost";        // Corrected variable name for host
+$db_user = "u338187101_lms";   // Corrected variable name for user
+$db_pass = "*sX*rb4fk8O";      // Corrected variable name for password
+$db_name = "u338187101_lms";   // Corrected variable name for dbname
 
 // --- Establish Database Connection ---
 $conn = new mysqli($db_host, $db_user, $db_pass, $db_name);
@@ -30,14 +29,14 @@ $conn->set_charset("utf8mb4");
 $protocol = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "https" : "http";
 $host = $_SERVER['HTTP_HOST'];
 
-// Get the directory of the current script (e.g., /projects/PSB/student)
+// Get the directory of the current script (e.g., /home/u338187101/domains/shilconsultancy.com/public_html/lms/student)
 $current_script_dir = realpath(__DIR__);
 
-// Go up one level to get to the project root (e.g., /projects/PSB)
+// Go up one level to get to the project root (e.g., /home/u338187101/domains/shilconsultancy.com/public_html/lms)
 $project_root_dir = realpath($current_script_dir . '/..');
 
 // Calculate the path to the project root relative to the document root
-// This will give something like '/projects/PSB'
+// This will give something like '/lms'
 $document_root = rtrim($_SERVER['DOCUMENT_ROOT'], '/');
 $project_root_relative_path = str_replace($document_root, '', str_replace('\\', '/', $project_root_dir));
 

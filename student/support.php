@@ -7,46 +7,37 @@ ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
 
 // Adjust the path to db_config.php if needed.
-// Assuming db_config.php is in the same directory as support.php
 require_once 'db_config.php';
 
 // --- Database Connection Validation ---
-// FIX: Using $conn as defined in db_config.php
 if (!isset($conn) || !$conn instanceof mysqli || $conn->connect_error) {
     die("Error: Database connection could not be established: " . (isset($conn) ? $conn->connect_error : "Connection object not found."));
 }
 
 // --- PHPMailer Integration ---
-// Import the PHPMailer classes into the global namespace
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 
-// --- CORRECTED PATHS ---
-// Require the PHPMailer files from the 'phpmailer/src' directory.
-// This assumes PHPMailer is located in a 'phpmailer' folder relative to your project root.
-// So, from 'student/support.php', it's '../../phpmailer/src/Exception.php'
+// This assumes the 'phpmailer' directory is inside the 'student' directory.
 require 'phpmailer/src/Exception.php';
 require 'phpmailer/src/PHPMailer.php';
 require 'phpmailer/src/SMTP.php';
 
 
 // --- Authorization Check ---
-// Redirect user to login page if they are not logged in
-if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true || !isset($_SESSION['user_id'])) { // FIX: Check for 'user_id'
+if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true || !isset($_SESSION['user_id'])) {
     header('Location: ../index.php'); // Adjust path to your login page
     exit;
 }
 
 // Initialize variables
-$current_user_id = $_SESSION['user_id']; // FIX: Use 'user_id'
+$current_user_id = $_SESSION['user_id'];
 $username = '';
 $email = '';
 $form_message = ''; // To display success or error messages
 
 // --- Fetch User Details to Pre-fill Form ---
-// We need the user's email for the form
 $sql_user_details = "SELECT username, email FROM users WHERE id = ?";
-// FIX: Use $conn for database operations
 if ($stmt_details = $conn->prepare($sql_user_details)) {
     $stmt_details->bind_param("i", $current_user_id);
     if ($stmt_details->execute()) {
@@ -55,9 +46,7 @@ if ($stmt_details = $conn->prepare($sql_user_details)) {
             $username = htmlspecialchars($user_data['username']);
             $email = htmlspecialchars($user_data['email']);
         } else {
-            // User data not found, possibly a corrupted session or deleted user
-            $form_message = '<div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4" role="alert"><p>Error: Your user data could not be retrieved. Please try logging in again.</p></div>';
-            // Optionally, destroy session and redirect to login
+            // User data not found
             session_destroy();
             header('Location: ../index.php');
             exit;
@@ -75,24 +64,20 @@ if ($stmt_details = $conn->prepare($sql_user_details)) {
 
 // --- Form Submission Logic ---
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
-    // --- Sanitize and Validate Inputs ---
+    // Sanitize and Validate Inputs
     $support_subject = filter_input(INPUT_POST, 'support_subject', FILTER_SANITIZE_FULL_SPECIAL_CHARS);
     $support_message = filter_input(INPUT_POST, 'support_message', FILTER_SANITIZE_FULL_SPECIAL_CHARS);
     $from_email = filter_var($email, FILTER_SANITIZE_EMAIL); // Use the logged-in user's email
     $is_valid = true;
 
-    // Basic validation
     if (empty($support_subject) || empty($support_message)) {
         $form_message = '<div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4" role="alert"><p>Please fill out all fields.</p></div>';
         $is_valid = false;
-    } elseif (!filter_var($from_email, FILTER_VALIDATE_EMAIL)) {
-        $form_message = '<div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4" role="alert"><p>Invalid email format.</p></div>';
-        $is_valid = false;
     }
 
-    // --- File Upload Handling & Sanitization ---
+    // File Upload Handling
     $attachment_path = null;
-    $attachment_name = null; // Initialize to null
+    $attachment_name = null;
     if (isset($_FILES['attachment']) && $_FILES['attachment']['error'] == 0) {
         $allowed_types = ['image/jpeg', 'image/png', 'image/gif'];
         $file_type = mime_content_type($_FILES['attachment']['tmp_name']);
@@ -110,30 +95,29 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     }
 
     if ($is_valid) {
-        // --- Send Email using PHPMailer ---
-        $mail = new PHPMailer(true); // Passing `true` enables exceptions
+        $mail = new PHPMailer(true);
 
         try {
-            // --- Server Settings (Updated with your details) ---
+            // Server Settings
             $mail->isSMTP();
             $mail->Host       = 'smtp.hostinger.com';
             $mail->SMTPAuth   = true;
             $mail->Username   = 'support@shilconsultancy.com';
-            $mail->Password   = '[cvgc|Hf7'; // IMPORTANT: Consider using environment variables for passwords
+            $mail->Password   = '5QY+!0#e[n'; // IMPORTANT: Use a secure method to store passwords
             $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
             $mail->Port       = 465;
 
-            // --- Recipients ---
+            // Recipients
             $mail->setFrom('support@shilconsultancy.com', 'PSB Learning Hub Support');
             $mail->addAddress('support@shilconsultancy.com', 'Support Team');
             $mail->addReplyTo($from_email, $username);
 
-            // --- Attachments ---
+            // Attachments
             if ($attachment_path) {
                 $mail->addAttachment($attachment_path, $attachment_name);
             }
 
-            // --- Content ---
+            // Content
             $mail->isHTML(true);
             $mail->Subject = "Support Request: " . $support_subject;
             $mail->Body    = "
@@ -159,8 +143,10 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         }
     }
 }
-// FIX: Close the database connection at the end of the script
 $conn->close();
+
+// Set the current page for the sidebar active state
+$currentPage = 'support';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -170,116 +156,118 @@ $conn->close();
     <title>Support - PSB Learning Hub</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/js/all.min.js"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        'theme-red': '#c51a1d',
-                        'theme-dark-red': '#a81013',
-                        'theme-black': '#1a1a1a',
-                        'light-gray': '#f5f7fa'
-                    },
-                    fontFamily: {
-                        sans: ['Inter', 'sans-serif'],
-                    }
-                }
-            }
-        }
-    </script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'Inter', sans-serif; }
-        .solid-header { background: linear-gradient(to right, #c51a1d, #a81013); }
+        .sidebar-link { transition: background-color 0.3s, color 0.3s; }
+        .sidebar-link:hover, .sidebar-link.active {
+            background-color: #c51a1d;
+            color: white;
+        }
+        .sidebar-link:hover .sidebar-icon, .sidebar-link.active .sidebar-icon {
+            color: white;
+        }
+        /* Custom scrollbar for webkit browsers */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
     </style>
 </head>
-<body class="bg-light-gray text-gray-800">
-    <div class="min-h-screen flex flex-col">
-        <!-- Header -->
-        <header class="solid-header text-white shadow-lg">
-            <div class="container mx-auto px-6 py-6">
-                <div class="flex flex-col md:flex-row justify-between items-center">
-                    <div class="text-center md:text-left mb-4 md:mb-0">
-                        <h1 class="text-3xl font-bold tracking-tight">PSB Learning Hub</h1>
-                        <p class="text-sm opacity-90">Your Pathway to Success</p>
-                    </div>
-                    <div class="mt-4 md:mt-0 flex items-center space-x-4">
-                        <a href="dashboard.php" class="text-white hover:text-gray-200 transition-colors font-medium">
-                           <i class="fas fa-arrow-left mr-2"></i> Back to Dashboard
-                        </a>
-                        <a href="../logout.php" class="inline-block bg-white text-theme-red font-semibold py-2 px-5 rounded-full shadow-md hover:bg-gray-100 hover:shadow-lg transition-all duration-300 ease-in-out text-sm">
-                            <i class="fas fa-sign-out-alt mr-2"></i> Logout
-                        </a>
-                    </div>
-                </div>
-            </div>
-        </header>
+<body class="bg-gray-50 h-screen flex flex-col">
+
+    <?php require_once 'header.php'; ?>
+
+    <div class="flex flex-1 overflow-hidden">
+        
+        <?php require_once 'sidebar.php'; ?>
 
         <!-- Main Content -->
-        <main class="flex-grow container mx-auto px-4 py-10">
-            <div class="max-w-3xl mx-auto bg-white p-8 rounded-xl shadow-md">
-                <div class="text-center mb-8">
-                    <i class="fas fa-headset text-5xl text-theme-red mb-4"></i>
-                    <h2 class="text-3xl font-bold text-theme-black">Get Support</h2>
-                    <p class="text-gray-600 mt-2">Have a question or facing a technical issue? Fill out the form below, and our team will get back to you as soon as possible.</p>
+        <div class="flex-1 flex flex-col overflow-hidden">
+            <!-- Page Content -->
+            <main class="flex-1 overflow-y-auto p-6">
+                <div class="container mx-auto">
+                    <div class="max-w-3xl mx-auto bg-white p-8 rounded-2xl shadow-sm">
+                        <div class="text-center mb-8">
+                            <i class="fas fa-headset text-5xl text-theme-red mb-4"></i>
+                            <h2 class="text-3xl font-bold text-gray-800">Get Support</h2>
+                            <p class="text-gray-600 mt-2">Have a question or facing a technical issue? Fill out the form below, and our team will get back to you as soon as possible.</p>
+                        </div>
+
+                        <!-- Contact Form -->
+                        <form action="support.php" method="POST" enctype="multipart/form-data" class="space-y-6">
+                            
+                            <!-- This div will display the success or error message from the PHP script -->
+                            <?php if (!empty($form_message)): ?>
+                                <div class="mb-6"><?php echo $form_message; ?></div>
+                            <?php endif; ?>
+
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <!-- Name Field (Read-only) -->
+                                <div>
+                                    <label for="name" class="block text-sm font-medium text-gray-700">Your Name</label>
+                                    <input type="text" id="name" name="name" value="<?php echo $username; ?>" readonly class="mt-1 block w-full bg-gray-100 border-gray-300 rounded-md shadow-sm p-3 cursor-not-allowed">
+                                </div>
+                                <!-- Email Field (Read-only) -->
+                                <div>
+                                    <label for="email" class="block text-sm font-medium text-gray-700">Your Email</label>
+                                    <input type="email" id="email" name="email" value="<?php echo $email; ?>" readonly class="mt-1 block w-full bg-gray-100 border-gray-300 rounded-md shadow-sm p-3 cursor-not-allowed">
+                                </div>
+                            </div>
+
+                            <!-- Subject Field -->
+                            <div>
+                                <label for="support_subject" class="block text-sm font-medium text-gray-700">Subject</label>
+                                <input type="text" id="support_subject" name="support_subject" required class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-theme-red focus:border-theme-red p-3" placeholder="e.g., Issue with exam review">
+                            </div>
+
+                            <!-- Message Field -->
+                            <div>
+                                <label for="support_message" class="block text-sm font-medium text-gray-700">Message</label>
+                                <textarea id="support_message" name="support_message" rows="6" required class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-theme-red focus:border-theme-red p-3" placeholder="Please describe your issue in detail..."></textarea>
+                            </div>
+                            
+                            <!-- Attachment Field -->
+                            <div>
+                                <label for="attachment" class="block text-sm font-medium text-gray-700">Attach an Image (Optional)</label>
+                                <input type="file" id="attachment" name="attachment" accept="image/png, image/jpeg, image/gif" class="mt-1 block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-red-50 file:text-theme-red hover:file:bg-red-100">
+                                <p class="mt-1 text-xs text-gray-500">Max file size: 5MB. Allowed types: JPG, PNG, GIF.</p>
+                            </div>
+
+                            <!-- Submit Button -->
+                            <div class="text-center pt-4">
+                                <button type="submit" class="w-full md:w-auto bg-theme-red hover:bg-theme-dark-red text-white font-bold py-3 px-10 rounded-lg transition duration-300 ease-in-out transform hover:scale-105">
+                                    <i class="fas fa-paper-plane mr-2"></i> Send Message
+                                </button>
+                            </div>
+                        </form>
+                    </div>
                 </div>
-
-                <!-- Contact Form -->
-                <form action="support.php" method="POST" enctype="multipart/form-data" class="space-y-6">
-                    
-                    <!-- This div will display the success or error message from the PHP script -->
-                    <?php if (!empty($form_message)): ?>
-                        <div class="mb-6"><?php echo $form_message; ?></div>
-                    <?php endif; ?>
-
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <!-- Name Field (Read-only) -->
-                        <div>
-                            <label for="name" class="block text-sm font-medium text-gray-700">Your Name</label>
-                            <input type="text" id="name" name="name" value="<?php echo $username; ?>" readonly class="mt-1 block w-full bg-gray-100 border-gray-300 rounded-md shadow-sm p-3 cursor-not-allowed">
-                        </div>
-                        <!-- Email Field (Read-only) -->
-                        <div>
-                            <label for="email" class="block text-sm font-medium text-gray-700">Your Email</label>
-                            <input type="email" id="email" name="email" value="<?php echo $email; ?>" readonly class="mt-1 block w-full bg-gray-100 border-gray-300 rounded-md shadow-sm p-3 cursor-not-allowed">
-                        </div>
-                    </div>
-
-                    <!-- Subject Field -->
-                    <div>
-                        <label for="support_subject" class="block text-sm font-medium text-gray-700">Subject</label>
-                        <input type="text" id="support_subject" name="support_subject" required class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-theme-red focus:border-theme-red p-3" placeholder="e.g., Issue with exam review">
-                    </div>
-
-                    <!-- Message Field -->
-                    <div>
-                        <label for="support_message" class="block text-sm font-medium text-gray-700">Message</label>
-                        <textarea id="support_message" name="support_message" rows="6" required class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-theme-red focus:border-theme-red p-3" placeholder="Please describe your issue in detail..."></textarea>
-                    </div>
-                    
-                    <!-- Attachment Field -->
-                    <div>
-                        <label for="attachment" class="block text-sm font-medium text-gray-700">Attach an Image (Optional)</label>
-                        <input type="file" id="attachment" name="attachment" accept="image/png, image/jpeg, image/gif" class="mt-1 block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-red-50 file:text-theme-red hover:file:bg-red-100">
-                        <p class="mt-1 text-xs text-gray-500">Max file size: 5MB. Allowed types: JPG, PNG, GIF.</p>
-                    </div>
-
-                    <!-- Submit Button -->
-                    <div class="text-center pt-4">
-                        <button type="submit" class="w-full md:w-auto bg-theme-red hover:bg-theme-dark-red text-white font-bold py-3 px-10 rounded-lg transition duration-300 ease-in-out transform hover:scale-105">
-                            <i class="fas fa-paper-plane mr-2"></i> Send Message
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </main>
-
-        <!-- Footer -->
-        <footer class="bg-theme-black text-white py-6 mt-10">
-            <div class="container mx-auto px-4 text-center">
-                <p>&copy; <?php echo date('Y'); ?> Learning Hub. All rights reserved.</p>
-            </div>
-        </footer>
+            </main>
+        </div>
     </div>
+    <div id="sidebar-overlay" class="fixed inset-0 bg-black bg-opacity-50 z-30 hidden md:hidden"></div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // --- Mobile Menu Toggle ---
+    const menuButton = document.getElementById('menu-button');
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebar-overlay');
+
+    const toggleSidebar = () => {
+        sidebar.classList.toggle('-translate-x-full');
+        overlay.classList.toggle('hidden');
+    };
+
+    if (menuButton && sidebar && overlay) {
+        menuButton.addEventListener('click', (e) => {
+            e.stopPropagation();
+            toggleSidebar();
+        });
+        overlay.addEventListener('click', toggleSidebar);
+    }
+});
+</script>
 </body>
 </html>

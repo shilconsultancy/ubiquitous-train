@@ -37,7 +37,7 @@ if ($revenue_previous_month > 0) {
     $revenue_growth = $revenue_current_month > 0 ? 100 : 0;
 }
 
-// --- 3. Combo Chart Data (Revenue vs. New Students) ---
+// --- 3. Table Data (Revenue vs. New Students) ---
 $result = $conn->query("
     SELECT
         DATE_FORMAT(d.month_date, '%Y-%m') AS month,
@@ -47,23 +47,11 @@ $result = $conn->query("
     WHERE d.month_date >= DATE_SUB(CURDATE(), INTERVAL 11 MONTH) AND d.month_date <= CURDATE()
     ORDER BY d.month_date ASC
 ");
-$chart_labels_combo = [];
-$chart_data_revenue = [];
-$chart_data_students = [];
-while($row = $result->fetch_assoc()){
-    $chart_labels_combo[] = date("M Y", strtotime($row['month']));
-    $chart_data_revenue[] = $row['revenue'] ?? 0;
-    $chart_data_students[] = $row['new_students'] ?? 0;
-}
+$revenue_student_data = $result->fetch_all(MYSQLI_ASSOC);
 
-// --- 4. User Role Distribution Chart ---
+
+// --- 4. User Role Distribution Data ---
 $user_counts = $conn->query("SELECT role, COUNT(id) as count FROM users GROUP BY role")->fetch_all(MYSQLI_ASSOC);
-$chart_labels_roles = [];
-$chart_data_roles = [];
-foreach($user_counts as $count){
-    $chart_labels_roles[] = ucfirst($count['role']);
-    $chart_data_roles[] = $count['count'];
-}
 
 // --- 5. Overdue Fees List ---
 $overdue_fees_result = $conn->query("
@@ -73,7 +61,6 @@ $overdue_fees_result = $conn->query("
     ORDER BY f.due_date ASC LIMIT 5
 ");
 
-// --- REPLACEMENT: START ---
 // --- 6. Revenue by Fee Type (YTD) ---
 $revenue_by_type_result = $conn->query("
     SELECT fee_type, SUM(amount) as total_revenue
@@ -82,12 +69,11 @@ $revenue_by_type_result = $conn->query("
     GROUP BY fee_type
     ORDER BY total_revenue DESC
 ");
-// --- REPLACEMENT: END ---
 
 // --- 7. Most Active Students (Exams Taken) ---
 $most_active_students_result = $conn->query("
-    SELECT u.username, COUNT(es.id) as session_count 
-    FROM exam_sessions es JOIN users u ON es.user_id = u.id 
+    SELECT u.username, COUNT(es.id) as session_count
+    FROM exam_sessions es JOIN users u ON es.user_id = u.id
     WHERE es.completed = 1 GROUP BY u.id ORDER BY session_count DESC LIMIT 5
 ");
 
@@ -102,7 +88,6 @@ $conn->close();
     <title>Super Admin Dashboard</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
         tailwind.config = {
             theme: {
@@ -116,46 +101,26 @@ $conn->close();
         }
     </script>
     <style>
-        /* Ensure body and html take full height for fixed positioning */
-        html, body {
-            height: 100%;
-        }
-        body { 
-            background-color: #F8FAFC; 
-            display: flex; /* Use flexbox for overall layout */
-            flex-direction: column; /* Stack header, content, and mobile nav vertically */
-        }
+        html, body { height: 100%; }
+        body { background-color: #F8FAFC; display: flex; flex-direction: column; }
         .shadow-custom { box-shadow: 0 4px 20px rgba(0,0,0,0.05); }
         .fade-in { animation: fadeIn 0.5s ease-out forwards; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-
-        /* Mobile adjustments for padding and layout */
         @media (max-width: 767px) {
-            main {
-                /* Add padding-top to prevent content from being hidden by fixed header */
-                padding-top: 80px; /* Adjust based on your header's actual height (e.g., py-4 means ~64px height) */
-                /* Add padding-bottom to prevent content from being hidden by fixed mobile nav */
-                padding-bottom: 100px; /* Adjust based on your mobile nav's height */
-            }
-            .grid-cols-1.md\:grid-cols-2.lg\:grid-cols-4.gap-6 {
-                grid-template-columns: 1fr; /* Stack KPI cards on small screens */
-            }
-            .lg\:col-span-3, .lg\:col-span-2 {
-                grid-column: span 1 / span 1; /* Ensure these also stack on mobile */
-            }
-            .grid.grid-cols-1.lg\:grid-cols-3.gap-8 {
-                grid-template-columns: 1fr; /* Stack the bottom charts/lists on mobile */
-            }
+            main { padding-top: 80px; padding-bottom: 100px; }
+            .grid-cols-1.md\:grid-cols-2.lg\:grid-cols-4.gap-6 { grid-template-columns: 1fr; }
+            .lg\:col-span-3, .lg\:col-span-2 { grid-column: span 1 / span 1; }
+            .grid.grid-cols-1.lg\:grid-cols-3.gap-8 { grid-template-columns: 1fr; }
         }
     </style>
 </head>
 <body class="text-gray-800 flex flex-col min-h-screen">
-    
+
     <?php require_once 'header.php'; ?>
-    
+
     <div class="flex flex-1">
         <?php require_once 'sidebar.php'; ?>
-        
+
         <main class="flex-1 p-6">
             <h2 class="text-3xl font-bold text-dark mb-2">Super Admin Dashboard</h2>
             <p class="text-gray-500 mb-8">A complete overview of the entire system.</p>
@@ -184,12 +149,48 @@ $conn->close();
 
             <div class="grid grid-cols-1 lg:grid-cols-5 gap-8 mb-8">
                 <div class="lg:col-span-3 bg-white rounded-xl shadow-custom p-6 fade-in" style="animation-delay: 0.4s;">
-                    <h4 class="text-lg font-bold text-dark mb-4">Revenue vs. New Students (12 Months)</h4>
-                    <canvas id="comboChart"></canvas>
+                    <h4 class="text-lg font-bold text-dark mb-4">Revenue vs. New Students (Last 12 Months)</h4>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="p-3 text-left font-medium text-gray-600">Month</th>
+                                    <th class="p-3 text-right font-medium text-gray-600">Revenue (BDT)</th>
+                                    <th class="p-3 text-right font-medium text-gray-600">New Students</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y">
+                                <?php foreach($revenue_student_data as $data): ?>
+                                <tr>
+                                    <td class="p-3 font-medium"><?= date("F Y", strtotime($data['month'])); ?></td>
+                                    <td class="p-3 text-right text-green-600 font-semibold"><?= number_format($data['revenue'] ?? 0, 2); ?></td>
+                                    <td class="p-3 text-right font-semibold"><?= $data['new_students'] ?? 0; ?></td>
+                                </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
                 <div class="lg:col-span-2 bg-white rounded-xl shadow-custom p-6 fade-in" style="animation-delay: 0.5s;">
                     <h4 class="text-lg font-bold text-dark mb-4">User Distribution</h4>
-                    <canvas id="userRoleChart"></canvas>
+                     <div class="overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="p-3 text-left font-medium text-gray-600">Role</th>
+                                    <th class="p-3 text-right font-medium text-gray-600">Count</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y">
+                                <?php foreach($user_counts as $role_data): ?>
+                                <tr>
+                                    <td class="p-3 font-medium"><?= ucfirst(str_replace('_', ' ', $role_data['role'])); ?></td>
+                                    <td class="p-3 text-right font-semibold"><?= $role_data['count']; ?></td>
+                                </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
 
@@ -223,7 +224,7 @@ $conn->close();
                 <div class="bg-white rounded-xl shadow-custom fade-in" style="animation-delay: 0.8s;">
                     <h4 class="text-lg font-bold text-dark p-6 border-b">Overdue Fee Payments</h4>
                     <div class="divide-y">
-                         <?php if ($overdue_fees_result->num_rows > 0): // Check if there are results before looping ?>
+                         <?php if ($overdue_fees_result->num_rows > 0): ?>
                              <?php while($fee = $overdue_fees_result->fetch_assoc()): ?>
                             <div class="p-4 flex justify-between items-center">
                                 <div>
@@ -244,55 +245,6 @@ $conn->close();
 
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-    // --- Combo Chart: Revenue vs New Students ---
-    new Chart(document.getElementById('comboChart'), {
-        type: 'bar',
-        data: {
-            labels: <?= json_encode($chart_labels_combo); ?>,
-            datasets: [
-                {
-                    label: 'Revenue (BDT)',
-                    data: <?= json_encode($chart_data_revenue); ?>,
-                    backgroundColor: 'rgba(79, 70, 229, 0.7)',
-                    yAxisID: 'y',
-                    order: 2
-                },
-                {
-                    label: 'New Students',
-                    data: <?= json_encode($chart_data_students); ?>,
-                    type: 'line',
-                    borderColor: 'rgba(14, 165, 233, 1)',
-                    backgroundColor: 'rgba(14, 165, 233, 0.5)',
-                    yAxisID: 'y1',
-                    order: 1
-                }
-            ]
-        },
-        options: {
-            responsive: true,
-            interaction: { mode: 'index', intersect: false },
-            scales: {
-                y: { type: 'linear', display: true, position: 'left', title: { display: true, text: 'Revenue (BDT)' }, beginAtZero: true },
-                y1: { type: 'linear', display: true, position: 'right', title: { display: true, text: 'New Students' }, grid: { drawOnChartArea: false }, beginAtZero: true }
-            }
-        }
-    });
-
-    // --- User Role Distribution Chart ---
-    new Chart(document.getElementById('userRoleChart'), {
-        type: 'doughnut',
-        data: {
-            labels: <?= json_encode($chart_labels_roles); ?>,
-            datasets: [{
-                data: <?= json_encode($chart_data_roles); ?>,
-                backgroundColor: ['#4F46E5', '#0EA5E9', '#EF4444'],
-                hoverOffset: 4
-            }]
-        },
-        options: { responsive: true, plugins: { legend: { position: 'top' } } }
-    });
-
-    // --- Header Dropdown Script (already provided in header.php, but often included directly for consistency) ---
     const userMenuButton = document.getElementById('user-menu-button');
     const userMenu = document.getElementById('user-menu');
     if(userMenuButton) {
@@ -304,7 +256,6 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     });
 
-    // --- Mobile Menu Toggle Script (Crucial for sidebar visibility on mobile) ---
     const mobileMoreBtn = document.getElementById('mobile-more-btn');
     const mobileMoreMenu = document.getElementById('mobile-more-menu');
     if(mobileMoreBtn){
@@ -313,7 +264,6 @@ document.addEventListener('DOMContentLoaded', function () {
             mobileMoreMenu.classList.toggle('hidden');
         });
     }
-    // Close the mobile menu if clicked outside
     document.addEventListener('click', (e) => {
         if (mobileMoreMenu && !mobileMoreMenu.classList.contains('hidden') && !mobileMoreBtn.contains(e.target) && !mobileMoreMenu.contains(e.target)) {
             mobileMoreMenu.classList.add('hidden');

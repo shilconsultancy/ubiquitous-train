@@ -3,7 +3,7 @@
 ?>
 <header class="bg-white shadow-custom py-4 px-6 flex justify-between items-center sticky top-0 z-50">
     <div class="flex items-center space-x-4">
-        <img src="PSB_LOGO.png" alt="PSB Logo" class="w-10 h-10">
+        <img src="PSBlogo.png" alt="PSB Logo" class="w-10 h-10">
 
         <h1 class="text-2xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
             PSB Admin
