@@ -4,9 +4,9 @@ require_once 'db_connect.php'; // Make sure this file is in the same directory
 
 // --- START OF CONFIGURATION ---
 // **IMPORTANT**: Change these values to your desired admin credentials.
-$admin_username = 'student123';        // Choose a username for your admin
-$admin_email = 'student123@example.com';  // Choose an email for your admin
-$admin_password = 'pass123'; // << CHOOSE A STRONG PASSWORD
+$admin_username = 'saikat';        // Choose a username for your admin
+$admin_email = 'shilconsultancy@gmail.com';  // Choose an email for your admin
+$admin_password = 'password'; // << CHOOSE A STRONG PASSWORD
 // --- END OF CONFIGURATION ---
 
 // Hash the password for security using PHP's built-in function
@@ -14,7 +14,7 @@ $admin_password = 'pass123'; // << CHOOSE A STRONG PASSWORD
 $password_hash = password_hash($admin_password, PASSWORD_DEFAULT);
 
 // The role for this user will be 'admin'
-$role = 'student';
+$role = 'super_admin';
 
 // The ACCA ID is not required for admins in your setup, so we can set it to NULL or an empty string.
 $acca_id = null;

@@ -3,10 +3,10 @@
 // This file is assumed to be located inside the 'student/' directory.
 
 // --- Database Credentials ---
-$db_host = "localhost";        // Make sure this is correct for your Hostinger setup
-$db_user = "u338187101_lms";   // VERIFY THIS USERNAME EXACTLY IN HOSTRINGER
-$db_pass = "*sX*rb4fk8O";      // VERIFY THIS PASSWORD EXACTLY IN HOSTRINGER (or set a new one)
-$db_name = "u338187101_lms";   // VERIFY THIS DATABASE NAME EXACTLY IN HOSTRINGER
+$servername = "localhost";    // Usually "localhost"
+$username = "root";           // Default for XAMPP is "root"
+$password = "";               // Default for XAMPP is empty
+$dbname = "lms_db"; // The database name you created
 
 // --- Establish Database Connection ---
 $conn = new mysqli($db_host, $db_user, $db_pass, $db_name); // This is line 12

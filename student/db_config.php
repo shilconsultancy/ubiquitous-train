@@ -4,9 +4,9 @@
 
 // --- Database Credentials ---
 $db_host = "localhost";        // Corrected variable name for host
-$db_user = "u338187101_lms";   // Corrected variable name for user
-$db_pass = "*sX*rb4fk8O";      // Corrected variable name for password
-$db_name = "u338187101_lms";   // Corrected variable name for dbname
+$db_user = "root";   // Corrected variable name for user
+$db_pass = "";      // Corrected variable name for password
+$db_name = "lms_db";   // Corrected variable name for dbname
 
 // --- Establish Database Connection ---
 $conn = new mysqli($db_host, $db_user, $db_pass, $db_name);
