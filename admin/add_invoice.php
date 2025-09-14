@@ -166,7 +166,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Create New Invoice - PSB Admin</title>
-    <!-- The rest of the HTML and JavaScript is identical to the previous version and remains unchanged. -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="icon" href="image.png" type="image/png">
@@ -215,8 +214,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         .subject-list-item.selected-subject .subject-custom-price-input { @apply bg-white text-primary border-primary; }
         #modal_selected_subjects_summary { @apply p-4 bg-blue-100 border border-blue-300 rounded-lg text-blue-800; }
         #modal_summary_fee_type { @apply text-xl font-semibold mb-2; }
-        #modal_selected_subjects_list { @apply list-disc list-inside pl-0 text-sm; }
-        #modal_selected_subjects_list li { @apply py-0.5; }
         #modal_total_selected_amount { @apply text-2xl font-extrabold; }
         @media (max-width: 1024px) { main { padding: 1.5rem; } }
         @media (max-width: 767px) {
@@ -258,7 +255,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             <?php endif; ?>
 
             <form action="add_invoice.php" method="POST" class="grid pos-grid gap-6">
-                <!-- Left Column: Invoice Items & Details -->
                 <div class="bg-white rounded-xl shadow-custom p-6 sm:p-8 fade-in space-y-6">
                     <h3 class="pos-section-title"><i class="fas fa-user-graduate mr-2"></i>Student & Invoice Details</h3>
                     <div>
@@ -309,7 +305,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                     </div>
                 </div>
 
-                <!-- Right Column: Summary & Payment -->
                 <div class="order-md-last bg-white rounded-xl shadow-custom p-6 sm:p-8 fade-in flex flex-col justify-between">
                     <div class="flex-grow">
                         <h3 class="pos-section-title"><i class="fas fa-receipt mr-2"></i>Invoice Summary</h3>
@@ -332,7 +327,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                             </div>
                         </div>
 
-                        <!-- Initial Payment Section -->
                         <div id="initial_payment_section" class="mt-6 space-y-4 pt-4 border-t">
                              <h3 class="text-lg font-semibold text-gray-700">Initial Payment (Optional)</h3>
                              <div>
@@ -375,9 +369,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         </main>
     </div>
 
-    <!-- Modal for subject selection -->
     <div id="subjectModal" class="modal">
-        <!-- Modal content is unchanged -->
         <div class="modal-content">
             <span class="close-button" id="modalCloseButton">&times;</span>
             <h3 class="text-2xl font-bold mb-4" id="modal_fee_type_title">Select Subject(s)</h3>
@@ -411,8 +403,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 <?php endif; ?>
             </div>
             <div id="modal_selected_subjects_summary" class="p-4 bg-blue-100 border border-blue-300 rounded-lg text-blue-800 mt-6 hidden">
-                <p class="font-semibold text-lg" id="modal_summary_fee_type"></p>
-                <ul id="modal_selected_subjects_list" class="list-disc list-inside pl-0 text-sm mb-2"></ul>
                 <p class="text-lg font-bold mt-1">Total Amount: <span id="modal_total_selected_amount">BDT 0.00</span></p>
             </div>
             <button type="button" id="add_subjects_to_cart_btn" class="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed mt-4">
@@ -423,7 +413,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
 
     <script>
-       // The JavaScript is identical to the previous version and remains unchanged.
         document.addEventListener('DOMContentLoaded', function() {
             const feeTypesList = <?php echo json_encode($fee_types_list); ?>;
             const currentLoggedInUserRole = "<?php echo isset($_SESSION['role']) ? $_SESSION['role'] : 'guest'; ?>";
@@ -516,7 +505,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 const checkedSubjects = Array.from(subjectsByCategoryContainer.querySelectorAll('.subject-checkbox:checked'));
                 let totalSelectedAmount = 0;
                 let allPricesValid = true;
-                modalSelectedSubjectsList.innerHTML = '';
                 if (checkedSubjects.length === 0) { modalSelectedSubjectsSummary.classList.add('hidden'); addSubjectsToCartBtn.disabled = true; }
                 else {
                     modalSelectedSubjectsSummary.classList.remove('hidden');
@@ -526,14 +514,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                         if (allowCustomSubjectPrice) { const customPriceInput = checkbox.closest('.subject-list-item').querySelector('.subject-custom-price-input'); subjectPrice = parseFloat(customPriceInput.value) || 0; if (isNaN(subjectPrice) || subjectPrice < 0) { allPricesValid = false; } }
                         else { subjectPrice = parseFloat(checkbox.dataset.subjectPrice) || 0; }
                         totalSelectedAmount += subjectPrice;
-                        const listItem = document.createElement('li');
-                        listItem.textContent = `${subjectCode} (BDT ${subjectPrice.toFixed(2)})`;
-                        modalSelectedSubjectsList.appendChild(listItem);
                     });
                     addSubjectsToCartBtn.disabled = !(checkedSubjects.length > 0 && allPricesValid);
                 }
-                if (currentlySelectedFeeTypeData) { modalSummaryFeeType.textContent = ucfirst(currentlySelectedFeeTypeData.type_name.replace('_', ' ')); }
-                else { modalSummaryFeeType.textContent = 'Selected Subjects'; }
                 modalTotalSelectedAmount.textContent = `BDT ${totalSelectedAmount.toFixed(2)}`;
             }
             feeTypeButtonsContainer.addEventListener('click', function(event) {
