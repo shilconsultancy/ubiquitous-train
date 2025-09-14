@@ -71,6 +71,7 @@ if (isset($conn) && $conn instanceof mysqli) {
     <title>View Exam - PSB Admin</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="icon" href="image.png" type="image/png">
     <script>
         tailwind.config = {
             theme: {

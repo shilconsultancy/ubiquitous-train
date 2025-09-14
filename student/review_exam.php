@@ -54,7 +54,8 @@ if (!empty($question_ids_str)) {
     $clean_subject = preg_replace('/[^a-zA-Z0-9]/', '', $session['subject']);
     $questions_table_name = "questions_" . strtolower($clean_subject);
 
-    $sql_questions = "SELECT id, question_text, option_a, option_b, option_c, option_d, correct_answer FROM `$questions_table_name` WHERE id IN ($question_ids_str) ORDER BY FIELD(id, $question_ids_str)";
+    // MODIFIED: Added `explanation` to the SELECT statement
+    $sql_questions = "SELECT id, question_text, option_a, option_b, option_c, option_d, correct_answer, explanation FROM `$questions_table_name` WHERE id IN ($question_ids_str) ORDER BY FIELD(id, $question_ids_str)";
     $result_questions = $conn->query($sql_questions);
 
     if ($result_questions) {
@@ -62,6 +63,7 @@ if (!empty($question_ids_str)) {
             $q_id = $question['id'];
             $user_answer_for_q = $user_answers[$q_id] ?? null;
 
+            // MODIFIED: Added `explanation` to the review data array
             $review_data[] = [
                 'id' => $q_id,
                 'text' => $question['question_text'],
@@ -73,7 +75,8 @@ if (!empty($question_ids_str)) {
                 ],
                 'user_answer' => $user_answer_for_q,
                 'correct_answer' => $question['correct_answer'],
-                'is_correct' => ($user_answer_for_q === $question['correct_answer'])
+                'is_correct' => ($user_answer_for_q === $question['correct_answer']),
+                'explanation' => $question['explanation'] ?? null // Use null coalescing for safety
             ];
         }
     } else {
@@ -126,9 +129,7 @@ $currentPage = 'history';
         
         <?php require_once 'sidebar.php'; ?>
 
-        <!-- Main Content -->
         <div class="flex-1 flex flex-col overflow-hidden">
-            <!-- Page Content -->
             <main class="flex-1 overflow-y-auto p-6">
                 <div class="container mx-auto">
                     <div class="bg-white rounded-2xl shadow-sm p-6 lg:p-8">
@@ -175,6 +176,18 @@ $currentPage = 'history';
                                             <div class="p-3 border rounded-md bg-slate-50 text-slate-500 italic">You did not answer this question. The correct answer was <strong><?php echo strtoupper($q['correct_answer']); ?></strong>.</div>
                                         <?php endif; ?>
                                     </div>
+                                    
+                                    <?php if (!empty($q['explanation'])): ?>
+                                        <div class="mt-4 pt-4 border-t border-gray-200">
+                                            <h4 class="font-semibold text-gray-800 mb-2 flex items-center">
+                                                <i class="fas fa-info-circle text-blue-500 mr-2"></i>
+                                                Explanation
+                                            </h4>
+                                            <div class="p-4 bg-gray-50 rounded-lg text-sm text-gray-700 leading-relaxed">
+                                                <?php echo nl2br(htmlspecialchars($q['explanation'])); ?>
+                                            </div>
+                                        </div>
+                                    <?php endif; ?>
                                 </div>
                             <?php endforeach; ?>
                         </div>

@@ -61,7 +61,8 @@ $conn->close();
     <title>Print Invoice #<?= htmlspecialchars($invoice['invoice_number'] ?? 'N/A'); ?></title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <style>
+    <link rel="icon" href="image.png" type="image/png">
+   <style>
         body { background-color: #F3F4F6; }
         .invoice-container { max-width: 800px; margin: 2rem auto; background: white; padding: 2.5rem; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); }
         .invoice-table th, .invoice-table td { padding: 0.75rem; text-align: left; border-bottom: 1px solid #E5E7EB; }

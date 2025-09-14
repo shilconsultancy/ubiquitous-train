@@ -10,6 +10,53 @@ if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true || !in_array
     exit;
 }
 
+// --- START: INVOICE DELETION LOGIC ---
+if (isset($_GET['delete_id']) && $_SESSION['role'] === 'super_admin') {
+    $invoice_id_to_delete = filter_var($_GET['delete_id'], FILTER_VALIDATE_INT);
+
+    if ($invoice_id_to_delete) {
+        $conn->begin_transaction();
+        try {
+            // First, get the invoice_number to delete related fees
+            $stmt_get_number = $conn->prepare("SELECT invoice_number FROM invoices WHERE id = ?");
+            $stmt_get_number->bind_param("i", $invoice_id_to_delete);
+            $stmt_get_number->execute();
+            $invoice_result = $stmt_get_number->get_result()->fetch_assoc();
+            
+            if ($invoice_result) {
+                $invoice_number = $invoice_result['invoice_number'];
+
+                // Delete associated fees
+                $stmt_delete_fees = $conn->prepare("DELETE FROM fees WHERE invoice_id = ?");
+                $stmt_delete_fees->bind_param("s", $invoice_number);
+                $stmt_delete_fees->execute();
+                $stmt_delete_fees->close();
+                
+                // Delete the invoice
+                $stmt_delete_invoice = $conn->prepare("DELETE FROM invoices WHERE id = ?");
+                $stmt_delete_invoice->bind_param("i", $invoice_id_to_delete);
+                $stmt_delete_invoice->execute();
+                $stmt_delete_invoice->close();
+            }
+            $stmt_get_number->close();
+            
+            $conn->commit();
+            header("Location: invoicing.php?message=Invoice deleted successfully.&message_type=success");
+            exit();
+        } catch (mysqli_sql_exception $exception) {
+            $conn->rollback();
+            error_log("Invoice deletion failed: " . $exception->getMessage());
+            header("Location: invoicing.php?message=Error deleting invoice.&message_type=error");
+            exit();
+        }
+    } else {
+        header("Location: invoicing.php?message=Invalid invoice ID for deletion.&message_type=error");
+        exit();
+    }
+}
+// --- END: INVOICE DELETION LOGIC ---
+
+
 $active_page = 'invoicing';
 $message_html = '';
 if (isset($_GET['message']) && isset($_GET['message_type'])) {
@@ -94,6 +141,7 @@ $conn->close();
     <title>Invoicing Management - PSB Admin</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="icon" href="image.png" type="image/png">
     <script>
         tailwind.config = {
             theme: {
@@ -141,31 +189,31 @@ $conn->close();
             <div class="bg-white rounded-xl shadow-custom">
                 <div class="p-6 border-b">
                      <form method="GET" action="invoicing.php" class="flex flex-col md:flex-row gap-4">
-                        <div class="relative flex-grow">
-                            <input type="text" name="search" placeholder="Search by invoice # or student..." class="border rounded-lg py-2 px-4 pl-10 w-full focus:ring-primary focus:border-primary" value="<?= htmlspecialchars($search_query) ?>">
-                            <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
-                        </div>
-                        <select name="status" class="border rounded-lg py-2 px-4 w-full md:w-auto focus:ring-primary focus:border-primary">
-                            <option value="">All Statuses</option>
+                         <div class="relative flex-grow">
+                             <input type="text" name="search" placeholder="Search by invoice # or student..." class="border rounded-lg py-2 px-4 pl-10 w-full focus:ring-primary focus:border-primary" value="<?= htmlspecialchars($search_query) ?>">
+                             <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
+                         </div>
+                         <select name="status" class="border rounded-lg py-2 px-4 w-full md:w-auto focus:ring-primary focus:border-primary">
+                             <option value="">All Statuses</option>
                              <?php foreach ($allowed_statuses as $status): ?>
-                            <option value="<?= $status ?>" <?= ($filter_status === $status) ? 'selected' : '' ?>><?= $status ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                        <button type="submit" class="bg-primary text-white font-semibold py-2 px-6 rounded-lg w-full md:w-auto hover:bg-indigo-700">Filter</button>
-                    </form>
+                             <option value="<?= $status ?>" <?= ($filter_status === $status) ? 'selected' : '' ?>><?= $status ?></option>
+                             <?php endforeach; ?>
+                         </select>
+                         <button type="submit" class="bg-primary text-white font-semibold py-2 px-6 rounded-lg w-full md:w-auto hover:bg-indigo-700">Filter</button>
+                     </form>
                 </div>
                 <div class="overflow-x-auto">
                     <table class="w-full text-sm responsive-table">
                         <thead class="bg-gray-50 text-left">
-                           <tr>
-                                <th class="py-3 px-4 font-medium text-gray-600">Invoice #</th>
-                                <th class="py-3 px-4 font-medium text-gray-600"><a href="?<?= http_build_query(array_merge($_GET, ['sort_by' => 'username', 'sort_order' => ($sort_by == 'username' && $sort_order == 'asc') ? 'desc' : 'asc'])) ?>">Student Name</a></th>
-                                <th class="py-3 px-4 font-medium text-gray-600"><a href="?<?= http_build_query(array_merge($_GET, ['sort_by' => 'total_amount', 'sort_order' => ($sort_by == 'total_amount' && $sort_order == 'asc') ? 'desc' : 'asc'])) ?>">Amount</a></th>
-                                <th class="py-3 px-4 font-medium text-gray-600"><a href="?<?= http_build_query(array_merge($_GET, ['sort_by' => 'issue_date', 'sort_order' => ($sort_by == 'issue_date' && $sort_order == 'asc') ? 'desc' : 'asc'])) ?>">Issue Date</a></th>
-                                <th class="py-3 px-4 font-medium text-gray-600"><a href="?<?= http_build_query(array_merge($_GET, ['sort_by' => 'due_date', 'sort_order' => ($sort_by == 'due_date' && $sort_order == 'asc') ? 'desc' : 'asc'])) ?>">Due Date</a></th>
-                                <th class="py-3 px-4 font-medium text-gray-600">Status</th>
-                                <th class="py-3 px-4 font-medium text-gray-600">Actions</th>
-                           </tr>
+                            <tr>
+                                 <th class="py-3 px-4 font-medium text-gray-600">Invoice #</th>
+                                 <th class="py-3 px-4 font-medium text-gray-600"><a href="?<?= http_build_query(array_merge($_GET, ['sort_by' => 'username', 'sort_order' => ($sort_by == 'username' && $sort_order == 'asc') ? 'desc' : 'asc'])) ?>">Student Name</a></th>
+                                 <th class="py-3 px-4 font-medium text-gray-600"><a href="?<?= http_build_query(array_merge($_GET, ['sort_by' => 'total_amount', 'sort_order' => ($sort_by == 'total_amount' && $sort_order == 'asc') ? 'desc' : 'asc'])) ?>">Amount</a></th>
+                                 <th class="py-3 px-4 font-medium text-gray-600"><a href="?<?= http_build_query(array_merge($_GET, ['sort_by' => 'issue_date', 'sort_order' => ($sort_by == 'issue_date' && $sort_order == 'asc') ? 'desc' : 'asc'])) ?>">Issue Date</a></th>
+                                 <th class="py-3 px-4 font-medium text-gray-600"><a href="?<?= http_build_query(array_merge($_GET, ['sort_by' => 'due_date', 'sort_order' => ($sort_by == 'due_date' && $sort_order == 'asc') ? 'desc' : 'asc'])) ?>">Due Date</a></th>
+                                 <th class="py-3 px-4 font-medium text-gray-600">Status</th>
+                                 <th class="py-3 px-4 font-medium text-gray-600">Actions</th>
+                            </tr>
                         </thead>
                         <tbody>
                             <?php if (!empty($invoices_data)): foreach ($invoices_data as $invoice): ?>
@@ -182,6 +230,11 @@ $conn->close();
                                         <div class="flex items-center space-x-3">
                                             <a href="view_invoice.php?invoice_id=<?= $invoice['id']; ?>" class="hover:text-blue-600" title="View"><i class="fas fa-eye"></i></a>
                                             <a href="edit_invoice.php?id=<?= $invoice['id']; ?>" class="hover:text-primary" title="Edit"><i class="fas fa-edit"></i></a>
+                                            <?php if ($_SESSION['role'] === 'super_admin'): ?>
+                                                <a href="invoicing.php?delete_id=<?= $invoice['id'] ?>" class="hover:text-red-600" title="Delete" onclick="return confirm('Are you sure you want to permanently delete this invoice and all associated fees? This action cannot be undone.');">
+                                                    <i class="fas fa-trash-alt"></i>
+                                                </a>
+                                            <?php endif; ?>
                                         </div>
                                     </td>
                                 </tr>
