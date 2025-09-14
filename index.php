@@ -138,10 +138,10 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         <div class="w-full max-w-6xl mx-auto">
             <div class="bg-white rounded-2xl shadow-2xl flex flex-col lg:flex-row overflow-hidden">
                 
-                <div class="w-full lg:w-1/2 hidden lg:block">
-                    <img src="https://placehold.co/1000x1200/e0e7ff/3730a3?text=PSB+Portal\n\nWelcome+Back" 
+                <div class="w-full lg:w-1/2 hidden lg:block ">
+                    <img src="psblogo2.png" 
                          alt="PSB Portal Welcome Image" 
-                         class="w-full h-full object-cover">
+                         class="w-full h-full object-contain">
                 </div>
 
                 <div class="w-full lg:w-1/2 p-8 sm:p-12 flex flex-col justify-center">
