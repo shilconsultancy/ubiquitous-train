@@ -50,8 +50,8 @@ if ($invoice_id > 0) {
     if ($result->num_rows === 1) {
         $invoice = $result->fetch_assoc();
 
-        // 2. Fetch all individual fee items for this invoice
-        $stmt_items = $conn->prepare("SELECT fee_type, subject, amount FROM fees WHERE invoice_id = ?");
+        // 2. Fetch all individual fee items for this invoice with descriptions
+        $stmt_items = $conn->prepare("SELECT f.fee_type, f.subject, f.amount, ft.description FROM fees f LEFT JOIN fee_types ft ON f.fee_type = ft.type_name WHERE f.invoice_id = ?");
         $stmt_items->bind_param("s", $invoice['invoice_number']);
         $stmt_items->execute();
         $items_result = $stmt_items->get_result();
@@ -145,9 +145,7 @@ $conn->close();
 
             <?php if ($invoice): ?>
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <!-- Left Column: Payment Form & History -->
                 <div class="lg:col-span-1 space-y-6">
-                    <!-- Record Payment Form -->
                     <div class="bg-white rounded-xl shadow-custom p-6 fade-in">
                         <h3 class="text-lg font-bold text-dark mb-4 border-b pb-2">Record a Payment</h3>
                         <form action="process_payment.php" method="POST" class="space-y-4">
@@ -188,7 +186,6 @@ $conn->close();
                             </button>
                         </form>
                     </div>
-                    <!-- Payment History -->
                     <div class="bg-white rounded-xl shadow-custom p-6 fade-in">
                         <h3 class="text-lg font-bold text-dark mb-4 border-b pb-2">Payment History</h3>
                         <div class="space-y-3 max-h-60 overflow-y-auto">
@@ -212,13 +209,10 @@ $conn->close();
                     </div>
                 </div>
 
-                <!-- Right Column: Invoice Details -->
                 <div class="lg:col-span-2 bg-white rounded-xl shadow-custom p-6 sm:p-8 fade-in">
                     <div class="flex flex-col sm:flex-row justify-between items-start mb-6 border-b pb-6">
                         <div>
-                            <img src="PSB_LOGO.png" alt="PSB Logo" class="h-12 mb-4">
-                            <p class="font-semibold text-gray-800">Professional School of Business</p>
-                            <p class="text-sm text-gray-500">First floor, Bashshah Mia Building, 1419, Nasirabad, Chittagong</p>
+                            <img src="PSBlogo.png" alt="PSB Logo" class="h-24 w-auto">
                         </div>
                         <div class="text-left sm:text-right mt-4 sm:mt-0">
                             <h2 class="text-3xl font-bold text-gray-800 uppercase">Invoice</h2>
@@ -239,28 +233,30 @@ $conn->close();
                         </div>
                     </div>
 
-                    <!-- Invoice Items Table -->
                     <div class="mb-8">
                         <h3 class="text-lg font-bold text-dark mb-4">Invoice Items</h3>
                         <div class="overflow-x-auto">
                             <table class="w-full text-sm">
                                 <thead class="bg-gray-50">
                                     <tr>
-                                        <th class="p-3 text-left font-medium text-gray-600">Description</th>
-                                        <th class="p-3 text-right font-medium text-gray-600">Amount (BDT)</th>
+                                        <th class="p-2 text-left font-medium text-gray-600">Description</th>
+                                        <th class="p-2 text-right font-medium text-gray-600">Amount (BDT)</th>
                                     </tr>
                                 </thead>
                                 <tbody class="divide-y">
                                     <?php if (!empty($fee_items)): ?>
                                         <?php foreach ($fee_items as $item): ?>
                                             <tr>
-                                                <td class="p-3">
-                                                    <?= htmlspecialchars(ucfirst(str_replace('_', ' ', $item['fee_type']))); ?>
+                                                <td class="py-2 px-2">
+                                                    <span class="font-medium text-gray-800"><?= htmlspecialchars(ucfirst(str_replace('_', ' ', $item['fee_type']))); ?></span>
                                                     <?php if (!empty($item['subject'])): ?>
-                                                        <span class="text-xs text-gray-500 block"><?= htmlspecialchars($item['subject']); ?></span>
+                                                        <span class="text-xs text-gray-500">- <?= htmlspecialchars($item['subject']); ?></span>
+                                                    <?php endif; ?>
+                                                    <?php if (!empty($item['description'])): ?>
+                                                        <span class="text-xs text-gray-500">- <?= htmlspecialchars($item['description']); ?></span>
                                                     <?php endif; ?>
                                                 </td>
-                                                <td class="p-3 text-right"><?= number_format($item['amount'], 2); ?></td>
+                                                <td class="p-2 text-right font-mono"><?= number_format($item['amount'], 2); ?></td>
                                             </tr>
                                         <?php endforeach; ?>
                                     <?php else: ?>
@@ -271,19 +267,28 @@ $conn->close();
                         </div>
                     </div>
                     
-                    <!-- Financial Summary -->
-                    <div class="grid grid-cols-3 gap-4 text-center mb-8 p-4 bg-gray-50 rounded-lg">
-                        <div>
-                            <p class="text-sm text-gray-500">Total Amount</p>
-                            <p class="text-xl font-bold text-dark">BDT <?= number_format($invoice['total_amount'], 2); ?></p>
-                        </div>
-                        <div>
-                            <p class="text-sm text-gray-500">Amount Paid</p>
-                            <p class="text-xl font-bold text-success">BDT <?= number_format($invoice['amount_paid'], 2); ?></p>
-                        </div>
-                        <div>
-                            <p class="text-sm text-gray-500">Balance Due</p>
-                            <p class="text-xl font-bold text-danger">BDT <?= number_format($invoice['balance_due'], 2); ?></p>
+                    <div class="flex justify-end mb-8">
+                        <div class="w-full max-w-sm text-gray-700 space-y-3">
+                            <div class="grid grid-cols-2">
+                                <span>Subtotal</span>
+                                <span class="font-mono text-right"><?= number_format(array_sum(array_column($fee_items, 'amount')), 2); ?></span>
+                            </div>
+                            <div class="grid grid-cols-2">
+                                <span>Discount</span>
+                                <span class="font-mono text-right">- <?= number_format(array_sum(array_column($fee_items, 'amount')) - $invoice['total_amount'], 2); ?></span>
+                            </div>
+                            <div class="grid grid-cols-2 border-t pt-2">
+                                <span class="font-semibold">Invoice Total</span>
+                                <span class="font-semibold font-mono text-right">BDT <?= number_format($invoice['total_amount'], 2); ?></span>
+                            </div>
+                            <div class="grid grid-cols-2 text-green-600">
+                                <span>Amount Paid</span>
+                                <span class="font-mono text-right">- <?= number_format($invoice['amount_paid'], 2); ?></span>
+                            </div>
+                            <div class="grid grid-cols-2 border-t-2 border-gray-800 pt-2 mt-2">
+                                <span class="font-bold text-lg">Balance Due</span>
+                                <span class="font-bold text-lg font-mono text-right">BDT <?= number_format($invoice['balance_due'], 2); ?></span>
+                            </div>
                         </div>
                     </div>
 

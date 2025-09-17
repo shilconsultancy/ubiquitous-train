@@ -16,7 +16,7 @@ $fee_types_list = [];
 $fees_subject_list = [];
 
 // Fetch necessary data for the form
-$result_fee_types = $conn->query("SELECT id, type_name, price, needs_subject, is_custom_amount FROM fee_types ORDER BY type_name ASC");
+$result_fee_types = $conn->query("SELECT id, type_name, price, description, needs_subject, is_custom_amount FROM fee_types ORDER BY type_name ASC");
 if ($result_fee_types) {
     while ($row = $result_fee_types->fetch_assoc()) {
         $fee_types_list[] = $row;
@@ -290,6 +290,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                                     <?php if ($fee_type_data['price'] !== null && $fee_type_data['price'] > 0): ?>
                                         <span class="block text-xs text-gray-500">BDT <?= number_format($fee_type_data['price'], 2); ?></span>
                                     <?php endif; ?>
+                                    <?php if (!empty($fee_type_data['description'])): ?>
+                                        <span class="block text-xs text-gray-500 mt-1"><?= htmlspecialchars($fee_type_data['description']); ?></span>
+                                    <?php endif; ?>
                                 </button>
                             <?php endforeach; ?>
                         </div>
@@ -535,7 +538,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             });
             subjectsByCategoryContainer.addEventListener('click', function(event) { const subjectItem = event.target.closest('.subject-list-item'); if (subjectItem) { const checkbox = subjectItem.querySelector('.subject-checkbox'); if (event.target !== checkbox && !event.target.closest('label') && !event.target.classList.contains('subject-custom-price-input')) { checkbox.checked = !checkbox.checked; } checkbox.dispatchEvent(new Event('change')); } });
             subjectsByCategoryContainer.addEventListener('change', function(event) { if (event.target.classList.contains('subject-checkbox')) { const subjectItem = event.target.closest('.subject-list-item'); if (event.target.checked) { subjectItem.classList.add('selected-subject'); } else { subjectItem.classList.remove('selected-subject'); } updateModalPreview(); } });
-            subjectsByCategoryContainer.addEventListener('input', function(event) { if (event.target.classList.contains('subject-custom-price-input')) { const checkbox = event.target.closest('.subject-list-item').querySelector('.subject-checkbox'); if (!checkbox.checked) { checkbox.checked = true; checkbox.closest('.subject-list-item').classList.add('selected-subject'); } updateModalPreview(); } });
+            subjectsByCategoryContainer.addEventListener('input', function(event) { if (event.target.classList.contains('subject-custom-price-input')) { const checkbox = event.target.closest('.subject-list-item').querySelector('.subject-custom-price-input'); if (!checkbox.checked) { checkbox.checked = true; checkbox.closest('.subject-list-item').classList.add('selected-subject'); } updateModalPreview(); } });
             if (addSubjectsToCartBtn) { addSubjectsToCartBtn.addEventListener('click', function() { const checkedSubjects = Array.from(subjectsByCategoryContainer.querySelectorAll('.subject-checkbox:checked')); if (checkedSubjects.length === 0) { alert('Please select at least one subject.'); return; } if (!currentlySelectedFeeTypeData) { alert("Error: Fee type not selected. Please close and re-open the modal."); closeModal(); return; } let hasInvalidPrice = false; checkedSubjects.forEach(checkbox => { let subjectPrice = 0; if (allowCustomSubjectPrice) { const customPriceInput = checkbox.closest('.subject-list-item').querySelector('.subject-custom-price-input'); subjectPrice = parseFloat(customPriceInput.value) || 0; if (isNaN(subjectPrice) || subjectPrice < 0) { hasInvalidPrice = true; } } else { subjectPrice = parseFloat(checkbox.dataset.subjectPrice) || 0; } cart.push({ fee_type: currentlySelectedFeeTypeData.type_name, amount: subjectPrice, subject_code: checkbox.dataset.subjectCode, custom_fee_name: null }); }); if (hasInvalidPrice) { alert("Please ensure all selected subjects have a valid, non-negative price."); return; } updateCartDisplay(); closeModal(); }); }
             if (modalCloseButton) { modalCloseButton.addEventListener('click', function(event) { event.stopPropagation(); closeModal(); }); }
             subjectModal.addEventListener('click', function(event) { if (event.target === subjectModal) { closeModal(); } });

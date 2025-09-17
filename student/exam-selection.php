@@ -30,7 +30,7 @@
             z-index: -1;
         }
 
-        /* --- NEW MODAL STYLING --- */
+        /* --- NEW SIMPLIFIED MODAL STYLING --- */
         .modal-overlay {
             position: fixed;
             top: 0;
@@ -55,19 +55,13 @@
             padding: 2rem;
             border-radius: 1rem;
             width: 100%;
-            max-width: 500px;
+            max-width: 400px; /* Smaller modal */
             box-shadow: 0 10px 25px rgba(0,0,0,0.1);
             transform: scale(0.95);
             transition: transform 0.3s ease;
         }
         .modal-overlay.visible .modal-content {
             transform: scale(1);
-        }
-        .modal-step {
-            display: none;
-        }
-        .modal-step.active {
-            display: block;
         }
     </style>
 </head>
@@ -127,70 +121,16 @@
         </div>
     </div>
 
-    <div id="studentModal" class="modal-overlay">
-        <div class="modal-content">
-            <div id="step1" class="modal-step active">
-                <h2 class="text-2xl font-bold mb-4">Student Details</h2>
-                <p class="mb-6 text-slate-600">Please enter your information to proceed.</p>
-                <div class="space-y-4">
-                    <div>
-                        <label for="studentName" class="block text-sm font-medium text-slate-700">Full Name</label>
-                        <input type="text" id="studentName" class="mt-1 block w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-[rgb(197,26,29)] focus:border-[rgb(197,26,29)] sm:text-sm">
-                        <p id="nameError" class="text-red-500 text-xs mt-1 hidden">Name is required.</p>
-                    </div>
-                    <div>
-                        <label for="studentEmail" class="block text-sm font-medium text-slate-700">Email Address</label>
-                        <input type="email" id="studentEmail" class="mt-1 block w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-[rgb(197,26,29)] focus:border-[rgb(197,26,29)] sm:text-sm">
-                         <p id="emailError" class="text-red-500 text-xs mt-1 hidden">A valid email is required.</p>
-                    </div>
-                    <div>
-                        <label for="accaId" class="block text-sm font-medium text-slate-700">ACCA ID</label>
-                        <input type="text" id="accaId" class="mt-1 block w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-[rgb(197,26,29)] focus:border-[rgb(197,26,29)] sm:text-sm">
-                        <p id="idError" class="text-red-500 text-xs mt-1 hidden">ACCA ID is required.</p>
-                    </div>
-                </div>
-                <div class="mt-8 flex justify-end">
-                    <button id="nextStep1" class="px-6 py-2 bg-[rgb(197,26,29)] text-white font-semibold rounded-md hover:bg-[rgb(177,23,26)] transition">Next</button>
-                </div>
-            </div>
-
-            <div id="step2" class="modal-step">
-                <h2 class="text-2xl font-bold mb-4">Terms & Conditions</h2>
-                <p class="mb-6 text-slate-600">Please review and accept the terms to continue.</p>
-                <div class="space-y-4">
-                    <div class="flex items-start">
-                        <input id="psbTerms" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-[rgb(197,26,29)] focus:ring-[rgb(177,23,26)]">
-                        <label for="psbTerms" class="ml-2 block text-sm text-gray-900">I accept the <a href="#" class="font-medium text-[rgb(197,26,29)] hover:underline">PSB T&C</a>.</label>
-                    </div>
-                    <div class="flex items-start">
-                        <input id="accaTerms" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-[rgb(197,26,29)] focus:ring-[rgb(177,23,26)]">
-                        <label for="accaTerms" class="ml-2 block text-sm text-gray-900">I accept the <a href="#" class="font-medium text-[rgb(197,26,29)] hover:underline">ACCA T&C</a>.</label>
-                    </div>
-                    <div class="flex items-start">
-                        <input id="examTerms" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-[rgb(197,26,29)] focus:ring-[rgb(177,23,26)]">
-                        <label for="examTerms" class="ml-2 block text-sm text-gray-900">I accept the <a href="#" class="font-medium text-[rgb(197,26,29)] hover:underline">Exam T&C</a>.</label>
-                    </div>
-                     <p id="termsError" class="text-red-500 text-xs mt-1 hidden">You must accept all terms and conditions.</p>
-                </div>
-                <div class="mt-8 flex justify-between">
-                    <button id="prevStep2" class="px-6 py-2 bg-slate-200 text-slate-800 font-semibold rounded-md hover:bg-slate-300 transition">Back</button>
-                    <button id="nextStep2" class="px-6 py-2 bg-[rgb(197,26,29)] text-white font-semibold rounded-md hover:bg-[rgb(177,23,26)] transition">Next</button>
-                </div>
-            </div>
-
-            <div id="step3" class="modal-step">
-                <h2 class="text-2xl font-bold mb-4">You are all set!</h2>
-                <p class="mb-6 text-slate-600">Click the button below to start your exam when you are ready. Good luck!</p>
-                <div class="mt-8 flex justify-between items-center">
-                    <button id="prevStep3" class="px-6 py-2 bg-slate-200 text-slate-800 font-semibold rounded-md hover:bg-slate-300 transition">Back</button>
-                    <button id="finalStartBtn" class="flex w-1/2 justify-center rounded-md bg-[rgb(197,26,29)] px-3 py-3 text-sm font-semibold leading-6 text-white shadow-sm hover:bg-[rgb(177,23,26)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[rgb(197,26,29)] transition-all duration-200">
-                        Start Exam Now
-                    </button>
-                </div>
+    <div id="confirmationModal" class="modal-overlay">
+        <div class="modal-content text-center">
+            <h2 class="text-2xl font-bold mb-4">Confirm Your Selection</h2>
+            <p class="mb-6 text-slate-600">You are about to start the <strong id="selectedExamText"></strong> exam. Please confirm that you are ready to begin.</p>
+            <div class="mt-8 flex justify-center gap-4">
+                <button id="cancelBtn" class="px-6 py-2 bg-slate-200 text-slate-800 font-semibold rounded-md hover:bg-slate-300 transition">Cancel</button>
+                <button id="finalStartBtn" class="px-6 py-2 bg-[rgb(197,26,29)] text-white font-semibold rounded-md hover:bg-[rgb(177,23,26)] transition">Start Exam</button>
             </div>
         </div>
     </div>
-
 
     <script>
         // Data for the subjects based on their level
@@ -206,6 +146,12 @@
         const subjectSelect = document.getElementById('subject');
         const startButton = document.getElementById('startExamBtn');
         const examWarning = document.getElementById('examWarning');
+        
+        // Modal elements
+        const modal = document.getElementById('confirmationModal');
+        const selectedExamText = document.getElementById('selectedExamText');
+        const cancelBtn = document.getElementById('cancelBtn');
+        const finalStartBtn = document.getElementById('finalStartBtn');
 
         // Listen for changes on the level dropdown
         levelSelect.addEventListener('change', () => {
@@ -243,113 +189,31 @@
             startButton.disabled = !(isLevelSelected && isSubjectSelected);
         }
         
-        // --- NEW MODAL LOGIC ---
-
-        // Modal Elements
-        const modal = document.getElementById('studentModal');
-        const steps = document.querySelectorAll('.modal-step');
-        let currentStep = 0;
-
-        const studentName = document.getElementById('studentName');
-        const studentEmail = document.getElementById('studentEmail');
-        const accaId = document.getElementById('accaId');
-
-        const nameError = document.getElementById('nameError');
-        const emailError = document.getElementById('emailError');
-        const idError = document.getElementById('idError');
-        const termsError = document.getElementById('termsError');
-        
-        const psbTerms = document.getElementById('psbTerms');
-        const accaTerms = document.getElementById('accaTerms');
-        const examTerms = document.getElementById('examTerms');
-
-        // Function to switch between modal steps
-        function showStep(stepIndex) {
-            steps.forEach((step, index) => {
-                step.classList.toggle('active', index === stepIndex);
-            });
-            currentStep = stepIndex;
-        }
-
-        // Validate Step 1: Student Details
-        function validateStep1() {
-            let isValid = true;
-            // Basic validation: check if fields are empty
-            if (studentName.value.trim() === '') {
-                nameError.classList.remove('hidden');
-                isValid = false;
-            } else {
-                nameError.classList.add('hidden');
-            }
-            // Basic email validation
-            if (!/^\S+@\S+\.\S+$/.test(studentEmail.value)) {
-                emailError.classList.remove('hidden');
-                isValid = false;
-            } else {
-                emailError.classList.add('hidden');
-            }
-            if (accaId.value.trim() === '') {
-                idError.classList.remove('hidden');
-                isValid = false;
-            } else {
-                idError.classList.add('hidden');
-            }
-            return isValid;
-        }
-
-        // Validate Step 2: Terms & Conditions
-        function validateStep2() {
-            const isValid = psbTerms.checked && accaTerms.checked && examTerms.checked;
-            if (!isValid) {
-                termsError.classList.remove('hidden');
-            } else {
-                termsError.classList.add('hidden');
-            }
-            return isValid;
-        }
-
         // Show the modal when the main start button is clicked
         startButton.addEventListener('click', () => {
+            const selectedSubjectName = subjectSelect.options[subjectSelect.selectedIndex].text;
+            selectedExamText.textContent = selectedSubjectName;
             modal.classList.add('visible');
         });
 
-        // Navigation button event listeners
-        document.getElementById('nextStep1').addEventListener('click', () => {
-            if (validateStep1()) {
-                showStep(1);
-            }
-        });
-
-        document.getElementById('prevStep2').addEventListener('click', () => {
-            showStep(0);
-        });
-
-        document.getElementById('nextStep2').addEventListener('click', () => {
-            if (validateStep2()) {
-                showStep(2);
-            }
+        // Hide the modal when the cancel button is clicked
+        cancelBtn.addEventListener('click', () => {
+            modal.classList.remove('visible');
         });
         
-        document.getElementById('prevStep3').addEventListener('click', () => {
-            showStep(1);
-        });
-
-        // Final Start Button - The redirection logic
-        document.getElementById('finalStartBtn').addEventListener('click', () => {
-            const selectedSubject = subjectSelect.value;
-            if (selectedSubject) {
-                const examPageUrl = `exam_${selectedSubject.toLowerCase()}.php`;
-                alert(`Redirecting you to the ${selectedSubject} exam...`);
-                window.location.href = examPageUrl;
-            }
-        });
-        
-        // Close modal if overlay is clicked
+        // Hide modal if overlay is clicked
         modal.addEventListener('click', (e) => {
             if (e.target === modal) {
                 modal.classList.remove('visible');
-                // Optional: reset to first step when closing
-                showStep(0); 
+            }
+        });
+
+        // Final Start Button - The redirection logic
+        finalStartBtn.addEventListener('click', () => {
+            const selectedSubject = subjectSelect.value;
+            if (selectedSubject) {
+                const examPageUrl = `exam_${selectedSubject.toLowerCase()}.php`;
+                window.location.href = examPageUrl;
             }
         });
 
