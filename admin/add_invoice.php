@@ -15,8 +15,8 @@ $students_list = [];
 $fee_types_list = [];
 $fees_subject_list = [];
 
-// Fetch necessary data for the form
-$result_fee_types = $conn->query("SELECT id, type_name, price, description, needs_subject, is_custom_amount FROM fee_types ORDER BY type_name ASC");
+// Fetch necessary data for the form, with updated sorting
+$result_fee_types = $conn->query("SELECT id, type_name, price, description, needs_subject, is_custom_amount FROM fee_types ORDER BY description IS NULL ASC, type_name ASC");
 if ($result_fee_types) {
     while ($row = $result_fee_types->fetch_assoc()) {
         $fee_types_list[] = $row;

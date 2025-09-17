@@ -40,6 +40,7 @@ if ($result_fetch->num_rows === 1) {
 
 } else {
     $error_message = "User profile not found.";
+    // Close connection and stop script if user not found
     $conn->close();
     die($error_message);
 }
@@ -48,65 +49,114 @@ $stmt_fetch->close();
 
 // Handle form submission for profile update
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
-    $new_email = trim($_POST['email']);
-    $new_password = $_POST['password'];
-    $confirm_password = $_POST['confirm_password'];
+    // --- 1. Image Upload Handling ---
+    $profile_image_path = $user_data['profile_image_path']; // Start with the existing path
+    $upload_error = false;
 
-    if (empty($new_email)) {
-        $error_message = "Email cannot be empty.";
-    } elseif (!filter_var($new_email, FILTER_VALIDATE_EMAIL)) {
-        $error_message = "Invalid email format.";
-    } elseif (!empty($new_password) && $new_password !== $confirm_password) {
-        $error_message = "New password and confirm password do not match.";
-    } else {
-        $duplicate_email_found = false;
-        $check_stmt = $conn->prepare("SELECT id FROM users WHERE email = ? AND id != ?");
-        $check_stmt->bind_param("si", $new_email, $current_user_id);
-        $check_stmt->execute();
-        $check_result = $check_stmt->get_result();
-        if ($check_result->num_rows > 0) {
-            $duplicate_email_found = true;
-            $error_message = "This email address is already in use by another account.";
+    if (isset($_FILES['profile_image']) && $_FILES['profile_image']['error'] === UPLOAD_ERR_OK) {
+        $upload_dir = '../uploads/profile_pictures/';
+        if (!is_dir($upload_dir)) {
+            mkdir($upload_dir, 0755, true);
         }
-        $check_stmt->close();
 
-        if (!$duplicate_email_found) {
-            $sql_update = "UPDATE users SET email = ?";
-            $params = "s";
-            $param_values = [&$new_email];
+        $allowed_types = ['image/jpeg', 'image/png', 'image/gif'];
+        $max_size = 5 * 1024 * 1024; // 5 MB
 
-            if (!empty($new_password)) {
-                $hashed_password = password_hash($new_password, PASSWORD_DEFAULT);
-                $sql_update .= ", password_hash = ?";
-                $params .= "s";
-                $param_values[] = &$hashed_password;
-            }
+        if (!in_array($_FILES['profile_image']['type'], $allowed_types)) {
+            $error_message = "Invalid file type. Only JPG, PNG, and GIF are allowed.";
+            $upload_error = true;
+        } elseif ($_FILES['profile_image']['size'] > $max_size) {
+            $error_message = "File is too large. Maximum size is 5 MB.";
+            $upload_error = true;
+        } else {
+            $file_ext = pathinfo($_FILES['profile_image']['name'], PATHINFO_EXTENSION);
+            $new_filename = 'user_' . $current_user_id . '_' . uniqid() . '.' . $file_ext;
+            $destination = $upload_dir . $new_filename;
 
-            $sql_update .= " WHERE id = ?";
-            $params .= "i";
-            $param_values[] = &$current_user_id;
-
-            $stmt_update = $conn->prepare($sql_update);
-            call_user_func_array([$stmt_update, 'bind_param'], array_merge([$params], $param_values));
-
-            if ($stmt_update->execute()) {
-                $success_message = "Profile updated successfully!";
-                $_SESSION['email'] = $new_email;
-                
-                $stmt_fetch_updated = $conn->prepare("SELECT username, email, acca_id, profile_image_path FROM users WHERE id = ?");
-                $stmt_fetch_updated->bind_param("i", $current_user_id);
-                $stmt_fetch_updated->execute();
-                $result_fetch_updated = $stmt_fetch_updated->get_result();
-                $user_data = $result_fetch_updated->fetch_assoc();
-                $stmt_fetch_updated->close();
-
+            if (move_uploaded_file($_FILES['profile_image']['tmp_name'], $destination)) {
+                // If there's an old image and it's not the default one, delete it
+                $default_avatar_path = 'admin/assets/images/default_avatar.png';
+                if (!empty($profile_image_path) && $profile_image_path !== $default_avatar_path && file_exists('../' . $profile_image_path)) {
+                    unlink('../' . $profile_image_path);
+                }
+                // The new path to be stored in the DB (relative to project root)
+                $profile_image_path = 'uploads/profile_pictures/' . $new_filename;
             } else {
-                $error_message = "Error updating profile: " . $stmt_update->error;
+                $error_message = "Failed to move uploaded file.";
+                $upload_error = true;
             }
-            $stmt_update->close();
+        }
+    }
+
+    // --- 2. Text Fields and Password Update Logic ---
+    if (!$upload_error) {
+        $new_email = trim($_POST['email']);
+        $new_password = $_POST['password'];
+        $confirm_password = $_POST['confirm_password'];
+
+        if (empty($new_email)) {
+            $error_message = "Email cannot be empty.";
+        } elseif (!filter_var($new_email, FILTER_VALIDATE_EMAIL)) {
+            $error_message = "Invalid email format.";
+        } elseif (!empty($new_password) && $new_password !== $confirm_password) {
+            $error_message = "New password and confirm password do not match.";
+        } else {
+            // Check for duplicate email only if it has changed
+            if ($new_email !== $user_data['email']) {
+                $check_stmt = $conn->prepare("SELECT id FROM users WHERE email = ? AND id != ?");
+                $check_stmt->bind_param("si", $new_email, $current_user_id);
+                $check_stmt->execute();
+                if ($check_stmt->get_result()->num_rows > 0) {
+                    $error_message = "This email address is already in use by another account.";
+                }
+                $check_stmt->close();
+            }
+
+            // If no errors so far, proceed with database update
+            if (empty($error_message)) {
+                $params = [];
+                $types = "";
+                $sql_update = "UPDATE users SET email = ?, profile_image_path = ?";
+                $params = [$new_email, $profile_image_path];
+                $types = "ss";
+
+                if (!empty($new_password)) {
+                    $hashed_password = password_hash($new_password, PASSWORD_DEFAULT);
+                    $sql_update .= ", password_hash = ?";
+                    $params[] = $hashed_password;
+                    $types .= "s";
+                }
+
+                $sql_update .= " WHERE id = ?";
+                $params[] = $current_user_id;
+                $types .= "i";
+
+                $stmt_update = $conn->prepare($sql_update);
+                $stmt_update->bind_param($types, ...$params);
+
+                if ($stmt_update->execute()) {
+                    $success_message = "Profile updated successfully!";
+                    $_SESSION['email'] = $new_email; // Update session email
+                    
+                    // Re-fetch data to show the latest info on the page
+                    $stmt_refetch = $conn->prepare("SELECT username, email, acca_id, profile_image_path FROM users WHERE id = ?");
+                    $stmt_refetch->bind_param("i", $current_user_id);
+                    $stmt_refetch->execute();
+                    $user_data = $stmt_refetch->get_result()->fetch_assoc();
+                    $stmt_refetch->close();
+
+                    // Update the image URL after successful upload
+                    $current_profile_pic_url = rtrim(BASE_URL, '/') . '/' . ltrim($user_data['profile_image_path'], '/');
+
+                } else {
+                    $error_message = "Error updating profile: " . $stmt_update->error;
+                }
+                $stmt_update->close();
+            }
         }
     }
 }
+
 
 $conn->close();
 
@@ -150,15 +200,13 @@ $currentPage = 'profile';
         
         <?php require_once 'sidebar.php'; ?>
 
-        <!-- Main Content -->
         <div class="flex-1 flex flex-col overflow-hidden">
-            <!-- Page Content -->
             <main class="flex-1 overflow-y-auto p-6">
                 <div class="container mx-auto">
                     <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6">
                         <div>
                             <h2 class="text-2xl font-bold text-gray-800">Edit Profile</h2>
-                            <p class="text-gray-500 mt-1">Update your email address and password.</p>
+                            <p class="text-gray-500 mt-1">Update your email, password, and profile picture.</p>
                         </div>
                         <div class="flex items-center space-x-3 mt-4 sm:mt-0 w-full sm:w-auto">
                             <a href="view_profile.php" class="w-full sm:w-auto bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-2 rounded-lg flex items-center justify-center"><i class="fas fa-arrow-left mr-2"></i> Back to Profile</a>
@@ -179,11 +227,12 @@ $currentPage = 'profile';
 
                     <?php if ($user_data): ?>
                     <div class="bg-white rounded-xl shadow-custom p-8 fade-in">
-                        <form action="<?= htmlspecialchars($_SERVER["PHP_SELF"]); ?>" method="POST">
+                        <form action="<?= htmlspecialchars($_SERVER["PHP_SELF"]); ?>" method="POST" enctype="multipart/form-data">
                             <div class="form-group flex flex-col items-center mb-6">
-                                <label class="block text-sm font-medium text-gray-700 text-center mb-2">Current Profile Picture</label>
-                                <img src="<?= htmlspecialchars($current_profile_pic_url); ?>" alt="Current Profile Picture" class="w-32 h-32 rounded-full object-cover border-4 border-white shadow-lg mb-4">
-                                <p class="text-sm text-gray-500">To change your profile picture, please contact an administrator.</p>
+                                <label for="profile_image" class="block text-sm font-medium text-gray-700 text-center mb-2">Profile Picture</label>
+                                <img id="imagePreview" src="<?= htmlspecialchars($current_profile_pic_url); ?>" alt="Profile Picture Preview" class="w-32 h-32 rounded-full object-cover border-4 border-white shadow-lg mb-4">
+                                <input type="file" id="profile_image" name="profile_image" accept="image/png, image/jpeg, image/gif" class="block w-full max-w-xs text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-red-50 file:text-theme-red hover:file:bg-red-100">
+                                <p class="text-xs text-gray-500 mt-2">Max 5MB. JPG, PNG, or GIF.</p>
                             </div>
 
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -197,7 +246,7 @@ $currentPage = 'profile';
                                 </div>
                             </div>
 
-                            <div class="form-group">
+                            <div class="form-group mt-6">
                                 <label for="email" class="block text-sm font-medium text-gray-700">Email Address</label>
                                 <input type="email" id="email" name="email" value="<?= htmlspecialchars($user_data['email']); ?>" required class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-theme-red focus:border-theme-red p-3">
                             </div>
@@ -218,7 +267,7 @@ $currentPage = 'profile';
                             </div>
 
                             <div class="flex justify-end mt-6">
-                                <button type="submit" class="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-black bg-theme-red hover:bg-theme-dark-red focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-theme-red transition-colors duration-200">
+                                <button type="submit" class="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-theme-red hover:bg-theme-dark-red focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-theme-red transition-colors duration-200">
                                     <i class="fas fa-save mr-2"></i> Save Changes
                                 </button>
                             </div>
@@ -251,6 +300,23 @@ $currentPage = 'profile';
                     toggleSidebar();
                 });
                 overlay.addEventListener('click', toggleSidebar);
+            }
+
+            // Image preview script
+            const imageInput = document.getElementById('profile_image');
+            const imagePreview = document.getElementById('imagePreview');
+            
+            if (imageInput) {
+                imageInput.addEventListener('change', function() {
+                    const file = this.files[0];
+                    if (file) {
+                        const reader = new FileReader();
+                        reader.onload = function(e) {
+                            imagePreview.src = e.target.result;
+                        }
+                        reader.readAsDataURL(file);
+                    }
+                });
             }
         });
     </script>
